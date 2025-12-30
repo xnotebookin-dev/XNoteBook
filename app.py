@@ -84,6 +84,8 @@ def init_database():
     conn.commit()
     conn.close()
 
+with app.app_context():
+    init_database()
 
 def get_location_from_ip(ip_address):
     """Get geographic location from IP address using GeoIP"""
@@ -499,5 +501,5 @@ if __name__ == '__main__':
         init_database()
     
     # Render provides the PORT environment variable automatically
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port)
