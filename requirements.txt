@@ -11,7 +11,7 @@ opencv-python==4.8.1.78
 
 # PDF Processing
 pdf2image==1.16.3
-PyMuPDF==1.23.8
+PyMuPDF>=1.24.11
 
 # OCR (Optical Character Recognition)
 easyocr==1.7.0
@@ -50,3 +50,4 @@ python-dotenv==1.0.0
 # Flask-Migrate==4.0.5
 
 # psycopg2-binary==2.9.9
+
