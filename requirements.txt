@@ -4,6 +4,9 @@
 # XNoteBook - Python Dependencies
 # Install with: pip install -r requirements.txt
 
+# Use the official PyTorch CPU index
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # Flask Web Framework
 Flask==3.0.0
 Werkzeug==3.0.1
@@ -21,9 +24,9 @@ easyocr>=1.7.2
 
 # Deep Learning (for EasyOCR)
 # Replace the heavy torch versions with these
---find-links https://download.pytorch.org/whl/cpu/torch_stable.html
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
+# Now list the packages without the +cpu suffix (pip will find the correct one)
+torch==2.5.1
+torchvision==0.20.1
 transformers>=4.46.0
 accelerate>=1.1.0
 
