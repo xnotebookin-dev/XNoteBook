@@ -1,1 +1,1 @@
-web: gunicorn --bind :8000 --workers 1 --timeout 150 --log-level debug app:app
+web: gunicorn --bind :8000 --workers 1 --timeout 300 --preload app:app
