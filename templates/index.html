@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OCR Document Converter</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #4caf50;
+            --light-green: #e8f5e9;
+            --border-green: #a5d6a7;
+            --text-dark: #2e3d2f;
+            --accent-blue: #2196f3;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--light-green);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .container {
+            background: #ffffff;
+            width: 100%;
+            max-width: 520px;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: var(--text-dark);
+            margin: 0 0 10px 0;
+            font-size: 28px;
+        }
+
+        .header p {
+            font-size: 15px;
+            color: #666;
+            margin: 0 0 8px 0;
+            line-height: 1.5;
+        }
+
+        .ai-text {
+            font-size: 14px;
+            color: #666;
+            margin: 0;
+        }
+
+        .ai-text .highlight {
+            background: linear-gradient(120deg, rgba(33, 150, 243, 0.15) 0%, rgba(76, 175, 80, 0.15) 100%);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .upload-box {
+            display: block;
+            width: 100%;
+            border: 2px dashed var(--border-green);
+            border-radius: 10px;
+            padding: 40px 24px;
+            text-align: center;
+            cursor: pointer;
+            background-color: #fafafa;
+            transition: all 0.3s ease;
+            margin-top: 25px;
+        }
+
+        .upload-box:hover {
+            background-color: #f1faf3;
+            border-color: var(--primary-green);
+        }
+
+        .upload-box input {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-box strong {
+            display: block;
+            color: var(--text-dark);
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .upload-box span {
+            display: block;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .preview {
+            margin-top: 25px;
+            text-align: center;
+        }
+
+        .preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: var(--light-green);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .error {
+            color: #d32f2f;
+            font-size: 14px;
+            margin-top: 15px;
+            text-align: center;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 6px;
+        }
+
+        .upload-btn {
+            margin-top: 25px;
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary-green);
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        .upload-btn:hover {
+            background-color: #43a047;
+            box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .upload-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .features {
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .feature-icon {
+            color: var(--primary-green);
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Document OCR Converter</h1>
+            <p>Convert images and PDFs into editable, searchable text documents</p>
+            <p class="ai-text">✨ <span class="highlight">Soon: Enhanced with Generative AI</span> - Coming soon for even smarter text extraction</p>
+        </div>
+
+        <label class="upload-box" id="uploadBox">
+            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf" />
+            <div class="upload-icon">📄</div>
+            <strong>Click to select a file</strong>
+            <span>Supports JPG, PNG or PDF (Max 5MB)</span>
+        </label>
+
+        <div class="preview" id="preview"></div>
+        <div class="error" id="error" style="display: none;"></div>
+
+        <button class="upload-btn" id="uploadBtn">Convert to Editable PDF</button>
+
+        <div class="features">
+            <div class="feature-item">
+                <span class="feature-icon">✓</span>
+                <span>Extract text from images and scanned documents</span>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon">✓</span>
+                <span>High accuracy OCR processing</span>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon">✓</span>
+                <span>Secure and private processing</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById("fileInput");
+        const preview = document.getElementById("preview");
+        const error = document.getElementById("error");
+        const uploadBtn = document.getElementById("uploadBtn");
+        const uploadBox = document.getElementById("uploadBox");
+
+        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+        let selectedFile = null;
+
+        fileInput.addEventListener("change", handleFileSelect);
+        uploadBtn.addEventListener("click", handleUpload);
+
+        function handleFileSelect() {
+            preview.innerHTML = "";
+            error.style.display = "none";
+
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            if (!isValidType(file)) {
+                showError("Invalid file type. Please upload JPG, PNG, or PDF.");
+                fileInput.value = "";
+                selectedFile = null;
+                return;
+            }
+
+            if (file.size > MAX_FILE_SIZE) {
+                showError("File size exceeds 5MB limit.");
+                fileInput.value = "";
+                selectedFile = null;
+                return;
+            }
+
+            selectedFile = file;
+
+            if (file.type.startsWith("image/")) {
+                const img = document.createElement("img");
+                img.src = URL.createObjectURL(file);
+                preview.appendChild(img);
+            } else if (file.type === "application/pdf") {
+                const info = document.createElement("div");
+                info.className = "file-info";
+                info.innerHTML = `<span style="font-size: 24px;">📄</span><span><strong>${file.name}</strong><br>${formatFileSize(file.size)}</span>`;
+                preview.appendChild(info);
+            }
+        }
+
+        function isValidType(file) {
+            const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
+            return allowedTypes.includes(file.type);
+        }
+
+        function showError(message) {
+            error.textContent = message;
+            error.style.display = "block";
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + " B";
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+            return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+        }
+
+        async function handleUpload() {
+            if (!selectedFile) {
+                showError("Please select a file before converting.");
+                return;
+            }
+
+            error.style.display = "none";
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = "Processing...";
+
+            try {
+                const formData = new FormData();
+                formData.append("file", selectedFile);
+
+                const response = await fetch("/upload", {
+                    method: "POST",
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // --- ADD THESE TWO LINES ---
+                    localStorage.setItem("last_job_id", data.job_id);
+                    localStorage.setItem("processingFile", data.filename);
+                    // ---------------------------
+
+                    window.location.href = "/processing";
+                } else {
+                    showError(data.error || "Upload failed. Please try again.");
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = "Convert to Editable PDF";
+                }
+            } catch (err) {
+                showError("Upload failed. Please try again.");
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = "Convert to Editable PDF";
+            }
+        }
+    </script>
+</body>
+</html>

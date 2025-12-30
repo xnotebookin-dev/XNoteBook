@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Processing Document</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #4caf50;
+            --light-green: #e8f5e9;
+            --border-green: #a5d6a7;
+            --text-dark: #2e3d2f;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--light-green);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .container {
+            background: #ffffff;
+            width: 100%;
+            max-width: 520px;
+            padding: 50px 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .spinner-container {
+            margin-bottom: 30px;
+        }
+
+        .spinner {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto;
+            border: 6px solid #e0e0e0;
+            border-top: 6px solid var(--primary-green);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        h1 {
+            color: var(--text-dark);
+            font-size: 26px;
+            margin: 0 0 15px 0;
+        }
+
+        .status-text {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .file-name {
+            background-color: var(--light-green);
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-dark);
+            margin-bottom: 30px;
+            word-break: break-word;
+        }
+
+        .progress-container {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: linear-gradient(90deg, var(--primary-green), #66bb6a);
+            border-radius: 10px;
+            width: 0%;
+            animation: progress 3s ease-in-out infinite;
+        }
+
+        @keyframes progress {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 95%; }
+        }
+
+        .progress-text {
+            font-size: 14px;
+            color: #999;
+        }
+
+        .steps {
+            margin-top: 40px;
+            text-align: left;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .step-item:last-child {
+            border-bottom: none;
+        }
+
+        .step-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--light-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .step-icon.active {
+            background-color: var(--primary-green);
+            color: white;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .step-text {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .step-text.active {
+            color: var(--text-dark);
+            font-weight: 600;
+        }
+
+        .note {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #fff9e6;
+            border-left: 4px solid #ffc107;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #856404;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner-container">
+            <div class="spinner"></div>
+        </div>
+
+        <h1>Processing Your Document</h1>
+        <p class="status-text" id="statusText">Analyzing and extracting text...</p>
+
+        <div class="file-name" id="fileName">Loading...</div>
+
+        <div class="progress-container">
+            <div class="progress-bar"></div>
+        </div>
+        <p class="progress-text">This may take a few moments</p>
+
+        <div class="steps">
+            <div class="step-item">
+                <div class="step-icon active" id="step1Icon">✓</div>
+                <div class="step-text active" id="step1Text">Uploading file</div>
+            </div>
+            <div class="step-item">
+                <div class="step-icon active" id="step2Icon">⟳</div>
+                <div class="step-text active" id="step2Text">Analyzing document</div>
+            </div>
+            <div class="step-item">
+                <div class="step-icon" id="step3Icon">○</div>
+                <div class="step-text" id="step3Text">Extracting text</div>
+            </div>
+            <div class="step-item">
+                <div class="step-icon" id="step4Icon">○</div>
+                <div class="step-text" id="step4Text">Generating PDF</div>
+            </div>
+        </div>
+
+        <div class="note">
+            💡 <strong>Tip:</strong> Our OCR technology works best with clear, high-resolution images and well-scanned documents.
+        </div>
+    </div>
+
+    <script>
+        const fileNameElement = document.getElementById("fileName");
+        const statusText = document.getElementById("statusText");
+
+        // Function to extract Job ID from cookies (Flask sessions use cookies)
+        function getJobId() {
+            // In a standard Flask setup, we'd ideally pass the Job ID via the URL or use the session.
+            // Since we're polling /status/<job_id>, we'll look for it in sessionStorage
+            // where we set it during index.html's upload process.
+            return localStorage.getItem("last_job_id");
+        }
+
+        async function pollStatus() {
+            const jobId = getJobId();
+            if (!jobId) {
+                console.error("No Job ID found");
+                window.location.href = "/";
+                return;
+            }
+
+            try {
+                const response = await fetch(`/status/${jobId}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    alert("Processing Error: " + data.error);
+                    window.location.href = "/";
+                    return;
+                }
+
+                // Update UI with filename once known
+                if (data.filename) {
+                    fileNameElement.textContent = data.filename;
+                }
+
+                if (data.status === "completed") {
+                    updateStepUI(3); // Complete all steps visually
+                    setTimeout(() => {
+                        window.location.href = "/result";
+                    }, 1000);
+                } else if (data.status === "failed") {
+                    alert("OCR Processing failed: " + (data.error_message || "Unknown error"));
+                    window.location.href = "/";
+                } else {
+                    // Still pending, continue polling
+                    simulateStepsProgress();
+                    setTimeout(pollStatus, 2000);
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+                setTimeout(pollStatus, 5000); // Retry after 5s on network error
+            }
+        }
+
+        // Visual sugar to make the UI feel reactive while waiting for the server
+        let currentStepIndex = 1;
+        function simulateStepsProgress() {
+            if (currentStepIndex < 3) {
+                const stepMessages = [
+                    "Analyzing document structure...",
+                    "Extracting text content...",
+                    "Generating editable PDF..."
+                ];
+                statusText.textContent = stepMessages[currentStepIndex - 1];
+                updateStepUI(currentStepIndex);
+                currentStepIndex++;
+            }
+        }
+
+        function updateStepUI(index) {
+            const stepIds = ["step1", "step2", "step3", "step4"];
+            for (let i = 0; i <= index; i++) {
+                const icon = document.getElementById(stepIds[i] + "Icon");
+                const text = document.getElementById(stepIds[i] + "Text");
+                if (i < index) {
+                    icon.textContent = "✓";
+                    icon.classList.remove("active");
+                } else {
+                    icon.textContent = "⟳";
+                    icon.classList.add("active");
+                }
+                text.classList.add("active");
+            }
+        }
+
+        // Start polling on page load
+        window.onload = pollStatus;
+    </script>
+</body>
+</html>

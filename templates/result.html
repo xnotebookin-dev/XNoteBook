@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conversion Result</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        :root {
+            --primary-green: #4caf50;
+            --light-green: #e8f5e9;
+            --border-green: #a5d6a7;
+            --text-dark: #2e3d2f;
+            --error-red: #d32f2f;
+            --error-light: #ffebee;
+        }
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--light-green);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            background: #ffffff; width: 100%; max-width: 520px;
+            padding: 40px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        .result-header { text-align: center; margin-bottom: 30px; }
+        .icon-container {
+            width: 80px; height: 80px; margin: 0 auto 20px;
+            border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 40px;
+        }
+        .icon-container.success { background-color: var(--light-green); color: var(--primary-green); }
+        .icon-container.error { background-color: var(--error-light); color: var(--error-red); }
+        h1 { color: var(--text-dark); font-size: 26px; margin: 0 0 10px 0; }
+        .subtitle { font-size: 15px; color: #666; }
+        .preview-container {
+            margin: 30px 0; border: 2px solid var(--border-green);
+            border-radius: 10px; overflow: hidden; background-color: #fafafa;
+            height: 350px; position: relative;
+        }
+        #pdfFrame { width: 100%; height: 100%; border: none; display: none; }
+        .pdf-placeholder {
+            height: 100%; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center; padding: 20px;
+        }
+        .pdf-icon { font-size: 60px; opacity: 0.2; margin-bottom: 10px; }
+        .preview-overlay {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            background: rgba(76, 175, 80, 0.95); color: white;
+            padding: 8px; text-align: center; font-size: 12px; font-weight: 600;
+        }
+        .file-info-box { background-color: var(--light-green); padding: 15px; border-radius: 8px; margin: 20px 0; }
+        .info-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
+        .info-label { color: #666; }
+        .info-value { color: var(--text-dark); font-weight: 600; }
+
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .button-row {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+        .btn {
+            flex: 1; padding: 14px; border: none; border-radius: 8px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            text-decoration: none; text-align: center; transition: 0.3s;
+        }
+        .btn-primary { background-color: var(--primary-green); color: white; }
+        .btn-secondary { background-color: white; color: var(--text-dark); border: 2px solid var(--border-green); }
+        .btn-form { background-color: #fbbc04; color: #fff; border: none; }
+        .btn-form:hover { background-color: #f9a825; }
+        .hidden { display: none; }
+        .fallback-link { color: var(--primary-green); font-size: 13px; text-decoration: underline; cursor: pointer; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="successState" class="hidden">
+            <div class="result-header">
+                <div class="icon-container success">✓</div>
+                <h1>Ready to Download</h1>
+                <p class="subtitle">OCR conversion completed successfully</p>
+            </div>
+
+            <div class="preview-container">
+                <div id="pdfPlaceholder" class="pdf-placeholder">
+                    <div class="pdf-icon">📄</div>
+                    <p style="font-size: 14px; color: #999;">Loading preview...</p>
+                    <div id="fallback" class="fallback-link hidden">Preview not loading? Click to open.</div>
+                </div>
+                <iframe id="pdfFrame"></iframe>
+                <div class="preview-overlay">Searchable PDF Generated</div>
+            </div>
+
+            <div class="file-info-box">
+                <div class="info-row"><span class="info-label">File:</span><span class="info-value" id="successFileName">document.pdf</span></div>
+                <div class="info-row"><span class="info-label">Status:</span><span class="info-value" style="color: var(--primary-green);">Success</span></div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" id="downloadBtn">Download PDF</button>
+                <div class="button-row">
+                    <a href="/" class="btn btn-secondary">New Upload</a>
+                    <a href="YOUR_GOOGLE_FORM_URL_HERE" target="_blank" class="btn btn-secondary">Give Feedback</a>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorState" class="hidden">
+            <div class="result-header">
+                <div class="icon-container error">✕</div>
+                <h1>Process Failed</h1>
+            </div>
+            <div class="button-group"><a href="/" class="btn btn-primary">Try Again</a></div>
+        </div>
+    </div>
+
+    <script>
+        // Retrieve Job ID from localStorage set in index.html
+        const jobId = localStorage.getItem("last_job_id");
+
+        async function init() {
+            if (!jobId) { window.location.href = "/"; return; }
+
+            try {
+                // Poll backend status
+                const res = await fetch(`/status/${jobId}`);
+                const data = await res.json();
+
+                if (data.status === "completed") {
+                    document.getElementById("successState").classList.remove("hidden");
+
+                    // Format output name: editable_[UPLOADED_FILE_NAME].pdf
+                    const originalName = data.filename || "document";
+                    const baseName = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
+                    document.getElementById("successFileName").textContent = `editable_${baseName}.pdf`;
+
+                    const frame = document.getElementById("pdfFrame");
+                    const placeholder = document.getElementById("pdfPlaceholder");
+                    const fallback = document.getElementById("fallback");
+                    const pdfUrl = `/download/${jobId}`;
+
+                    // Set frame source to backend download route
+                    frame.src = pdfUrl;
+
+                    frame.onload = () => {
+                        placeholder.style.display = "none";
+                        frame.style.display = "block";
+                    };
+
+                    setTimeout(() => { if(frame.style.display !== "block") fallback.classList.remove("hidden"); }, 3000);
+
+                    fallback.onclick = () => window.open(pdfUrl, '_blank');
+                    document.getElementById("downloadBtn").onclick = () => window.location.href = pdfUrl;
+                } else {
+                    document.getElementById("errorState").classList.remove("hidden");
+                }
+            } catch (e) {
+                document.getElementById("errorState").classList.remove("hidden");
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
