@@ -221,6 +221,7 @@ def create_searchable_pdf(image_paths, all_blocks, output_pdf):
 
     for img_path, blocks in zip(image_paths, all_blocks):
         img = Image.open(img_path)
+        # Pillow 10+ Compatibility: Using Resampling.LANCZOS if resizing were needed
         width, height = img.size
 
         # Create new page with image
@@ -320,46 +321,34 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Handle file upload"""
-    # Check if file is present
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
 
-    # Check if file is selected
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
-    # Validate file type
     if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type'}), 400
 
     try:
-        # Generate unique job ID
         job_id = str(uuid.uuid4())
-
-        # Secure the filename
         filename = secure_filename(file.filename)
 
-        # Save uploaded file
         upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_{filename}")
         file.save(upload_path)
 
-        # Get file info
         file_size = os.path.getsize(upload_path)
         file_type = filename.rsplit('.', 1)[1].lower()
 
-        # Track the upload
         track_upload(job_id, filename, file_size, file_type)
 
-        # Store job info in session
         session['job_id'] = job_id
         session['filename'] = filename
 
-        # Start background processing
         output_path = os.path.join(app.config['PROCESSED_FOLDER'], f"{job_id}_editable.pdf")
 
-        # Process in background thread
         thread = threading.Thread(
             target=process_document,
             args=(upload_path, output_path, job_id)
@@ -418,33 +407,43 @@ def check_status(job_id):
 def result():
     """Result page"""
     track_visit('result')
-    job_id = session.get('job_id')
-
-    if not job_id:
-        return redirect(url_for('index'))
-
     return render_template('result.html')
 
 
 @app.route('/download/<job_id>')
 def download_file(job_id):
+    """Download or Preview processed PDF"""
     try:
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        cursor = conn.cursor()
+        cursor.execute('SELECT filename FROM uploads WHERE job_id = ?', (job_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            return "Job not found", 404
+
+        original_filename = result[0]
+        base_name = os.path.splitext(original_filename)[0]
+        new_filename = f"editable_{base_name}.pdf"
+
         output_path = os.path.join(app.config['PROCESSED_FOLDER'], f"{job_id}_editable.pdf")
 
         if os.path.exists(output_path):
-            # Changing as_attachment to False allows the browser to show it in the iframe
-            # We also set the mimetype explicitly to 'application/pdf'
+            # mimetype is critical for iframe preview
             return send_file(
                 output_path,
                 mimetype='application/pdf',
                 as_attachment=False,
-                download_name=f"XNoteBook.pdf"
+                download_name=new_filename
             )
         else:
             return "File not found", 404
+
     except Exception as e:
         print(f"Download error: {e}")
         return "Download failed", 500
+
 
 @app.route('/analytics')
 def analytics():
@@ -453,44 +452,21 @@ def analytics():
         conn = sqlite3.connect(app.config['DATABASE_PATH'])
         cursor = conn.cursor()
 
-        # Get total visits
         cursor.execute('SELECT COUNT(*) FROM visits')
         total_visits = cursor.fetchone()[0]
 
-        # Get total uploads
         cursor.execute('SELECT COUNT(*) FROM uploads')
         total_uploads = cursor.fetchone()[0]
 
-        # Get visits by country
-        cursor.execute('''
-            SELECT country, COUNT(*) as count 
-            FROM visits 
-            GROUP BY country 
-            ORDER BY count DESC 
-            LIMIT 10
-        ''')
+        cursor.execute('SELECT country, COUNT(*) as count FROM visits GROUP BY country ORDER BY count DESC LIMIT 10')
         visits_by_country = cursor.fetchall()
 
-        # Get uploads by country
-        cursor.execute('''
-            SELECT country, COUNT(*) as count 
-            FROM uploads 
-            GROUP BY country 
-            ORDER BY count DESC 
-            LIMIT 10
-        ''')
+        cursor.execute('SELECT country, COUNT(*) as count FROM uploads GROUP BY country ORDER BY count DESC LIMIT 10')
         uploads_by_country = cursor.fetchall()
 
-        # Get recent uploads
-        cursor.execute('''
-            SELECT filename, status, country, upload_timestamp 
-            FROM uploads 
-            ORDER BY upload_timestamp DESC 
-            LIMIT 10
-        ''')
+        cursor.execute('SELECT filename, status, country, upload_timestamp FROM uploads ORDER BY upload_timestamp DESC LIMIT 10')
         recent_uploads = cursor.fetchall()
 
-        # Get success rate
         cursor.execute('''
             SELECT 
                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
@@ -499,7 +475,6 @@ def analytics():
             FROM uploads
         ''')
         status_stats = cursor.fetchone()
-
         conn.close()
 
         analytics_data = {
@@ -514,85 +489,10 @@ def analytics():
                 'total': status_stats[2] or 0
             }
         }
-
         return render_template('analytics.html', data=analytics_data)
-
     except Exception as e:
-        print(f"Analytics error: {e}")
         return f"Error loading analytics: {e}", 500
 
-
-@app.route('/api/analytics')
-def api_analytics():
-    """API endpoint for analytics data (JSON)"""
-    try:
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
-        cursor = conn.cursor()
-
-        # Get summary statistics
-        cursor.execute('SELECT COUNT(*) FROM visits')
-        total_visits = cursor.fetchone()[0]
-
-        cursor.execute('SELECT COUNT(*) FROM uploads')
-        total_uploads = cursor.fetchone()[0]
-
-        cursor.execute('''
-            SELECT country, COUNT(*) as count 
-            FROM uploads 
-            GROUP BY country 
-            ORDER BY count DESC
-        ''')
-        regional_stats = [{'country': row[0], 'count': row[1]} for row in cursor.fetchall()]
-
-        conn.close()
-
-        return jsonify({
-            'total_visits': total_visits,
-            'total_uploads': total_uploads,
-            'regional_stats': regional_stats
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================
-# ERROR HANDLERS
-# ============================================
-
-@app.errorhandler(404)
-def not_found(error):
-    """Handle 404 errors"""
-    return render_template('404.html'), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors"""
-    return render_template('500.html'), 500
-
-
-@app.errorhandler(413)
-def too_large(error):
-    """Handle file too large errors"""
-    return jsonify({'error': 'File size exceeds 5MB limit'}), 413
-
-
-# ============================================
-# APPLICATION STARTUP
-# ============================================
-
 if __name__ == '__main__':
-    # Initialize database
     init_database()
-
-    # Run Flask application
-    print(f"Starting {app.config['APP_NAME']}...")
-    print(f"Visit: http://localhost:5000")
-    print(f"Analytics: http://localhost:5000/analytics")
-
-    app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=app.config['DEBUG']
-    )
+    app.run(host='0.0.0.0', port=5000)
