@@ -84,6 +84,7 @@ def init_database():
     conn.commit()
     conn.close()
 
+
 with app.app_context():
     init_database()
 
