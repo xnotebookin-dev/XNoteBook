@@ -37,8 +37,39 @@ app.config.from_object(config['development'])
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
 
-# Initialize EasyOCR reader (lazy loading)
+# ============================================
+# 🔴 CHANGE #1: ADD MODEL DIRECTORY CONSTANT
+# ============================================
+# Use /tmp because it's writable on AWS Elastic Beanstalk
+MODEL_DIR = '/tmp/easyocr_models'
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+# ============================================
+# 🔴 CHANGE #2: INITIALIZE OCR AT STARTUP
+# ============================================
+# OLD CODE: ocr_reader = None
+# NEW CODE: Initialize immediately
 ocr_reader = None
+
+print("="*50)
+print("🚀 INITIALIZING EASYOCR AT STARTUP...")
+print("="*50)
+
+try:
+    ocr_reader = easyocr.Reader(
+        ['en'],                           # Language
+        gpu=False,                        # No GPU
+        download_enabled=True,            # Allow download if models missing
+        model_storage_directory=MODEL_DIR # Use /tmp directory
+    )
+    print("✅ EasyOCR initialized successfully!")
+    print(f"📁 Models stored in: {MODEL_DIR}")
+except Exception as e:
+    print(f"⚠️  EasyOCR initialization failed: {e}")
+    print("⚠️  Will retry on first upload (may cause initial delay)")
+    ocr_reader = None
+
+print("="*50)
 
 
 # ============================================
@@ -176,12 +207,15 @@ def update_upload_status(job_id, status, error_message=None):
 # ============================================
 
 def get_ocr_reader():
-    """Lazy load EasyOCR reader"""
+    """Lazy load EasyOCR reader (fallback if startup initialization failed)"""
     global ocr_reader
     if ocr_reader is None:
+        print("⚠️  Late OCR initialization (startup init failed)")
         ocr_reader = easyocr.Reader(
-            app.config['OCR_LANGUAGE'],
-            gpu=app.config['USE_GPU']
+            ['en'],
+            gpu=False,
+            download_enabled=True,
+            model_storage_directory=MODEL_DIR
         )
     return ocr_reader
 
@@ -313,6 +347,41 @@ def allowed_file(filename):
 # ============================================
 # FLASK ROUTES
 # ============================================
+
+# ============================================
+# 🔴 CHANGE #3: ADD HEALTH CHECK ENDPOINT
+# ============================================
+@app.route('/health')
+def health_check():
+    """Health check endpoint for AWS Load Balancer"""
+    return jsonify({
+        'status': 'healthy',
+        'ocr_ready': ocr_reader is not None,
+        'timestamp': datetime.now().isoformat()
+    }), 200
+
+
+# ============================================
+# 🔴 CHANGE #4: ADD WARMUP ENDPOINT
+# ============================================
+@app.route('/warmup')
+def warmup():
+    """Warmup endpoint to test OCR initialization"""
+    try:
+        reader = get_ocr_reader()
+        return jsonify({
+            'status': 'ready',
+            'ocr_loaded': True,
+            'message': 'OCR model is loaded and ready',
+            'model_directory': MODEL_DIR
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'ocr_loaded': False,
+            'error': str(e)
+        }), 500
+
 
 @app.route('/')
 def index():
@@ -500,7 +569,7 @@ if __name__ == '__main__':
     # Force database initialization before the server starts
     with app.app_context():
         init_database()
-    
+
     # Render provides the PORT environment variable automatically
     port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port)
