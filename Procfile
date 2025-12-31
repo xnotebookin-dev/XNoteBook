@@ -1,1 +1,1 @@
-echo 'web: gunicorn --bind :8000 --workers 1 --threads 4 --timeout 600 --graceful-timeout 600 --keep-alive 5 --preload --log-level info app:app' > Procfile
+web: gunicorn --bind :8000 --workers 1 --threads 4 --timeout 600 --graceful-timeout 600 --keep-alive 5 --preload --log-level info app:app
