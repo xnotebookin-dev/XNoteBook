@@ -20,6 +20,14 @@ import cv2
 import fitz
 import numpy as np
 
+# ============================================
+# TESSERACT PATH CONFIGURATION (ADDED)
+# ============================================
+# This is the specific fix for the "not in PATH" error on AWS
+tesseract_bin = "/usr/bin/tesseract"
+if os.path.exists(tesseract_bin):
+    pytesseract.pytesseract.tesseract_cmd = tesseract_bin
+
 # Optional: GeoIP for location tracking
 try:
     from geoip2 import database
@@ -59,7 +67,6 @@ except Exception as e:
     print("⚠️ Install with: sudo apt-get install tesseract-ocr")
 
 print("="*50)
-
 
 # ============================================
 # DATABASE SETUP AND HELPER FUNCTIONS
