@@ -1,1 +1,1 @@
-web: gunicorn --bind :8000 --workers 1 --threads 4 --timeout 600 --graceful-timeout 600 --keep-alive 5 --preload --log-level info app:app
+web: gunicorn --bind :8000 --workers 2 --threads 2 --timeout 300 --graceful-timeout 60 --keep-alive 75 --preload --worker-class sync --max-requests 100 --max-requests-jitter 10 --log-level info --access-logfile - --error-logfile - app:app

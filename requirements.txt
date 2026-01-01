@@ -1,12 +1,6 @@
 # XNoteBook - Python Dependencies
 # Install with: pip install -r requirements.txt
 
-# XNoteBook - Python Dependencies
-# Install with: pip install -r requirements.txt
-
-# Use the official PyTorch CPU index
---extra-index-url https://download.pytorch.org/whl/cpu
-
 # Flask Web Framework
 Flask==3.0.0
 Werkzeug==3.0.1
@@ -19,16 +13,8 @@ opencv-python-headless==4.10.0.84
 pdf2image==1.16.3
 PyMuPDF>=1.24.11
 
-# OCR (Optical Character Recognition)
-easyocr>=1.7.2
-
-# Deep Learning (for EasyOCR)
-# Replace the heavy torch versions with these
-# Now list the packages without the +cpu suffix (pip will find the correct one)
-torch==2.5.1
-torchvision==0.20.1
-transformers>=4.46.0
-accelerate>=1.1.0
+# OCR (Optical Character Recognition) - CHANGED TO TESSERACT
+pytesseract==0.3.10
 
 # Geographic Location Tracking
 python-geoip-geolite2==2015.0303

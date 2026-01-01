@@ -31,7 +31,7 @@ class Config:
     DATABASE_PATH = os.path.join(BASE_DIR, 'analytics.db')
 
     # OCR Settings
-    OCR_DPI = 300
+    OCR_DPI = 150
     OCR_LANGUAGE = ['en']
     USE_GPU = False
 
