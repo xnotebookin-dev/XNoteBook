@@ -23,7 +23,7 @@ import numpy as np
 # ============================================
 # TESSERACT PATH CONFIGURATION (ADDED)
 # ============================================
-# This is the specific fix for the "not in PATH" error on AWS
+# This is the specific fix for the "not in PATH" error on AWS [cite: 65, 67]
 tesseract_bin = "/usr/bin/tesseract"
 if os.path.exists(tesseract_bin):
     pytesseract.pytesseract.tesseract_cmd = tesseract_bin
