@@ -1,9 +1,12 @@
 #!/bin/bash
 # .platform/hooks/prebuild/01_install_tesseract.sh
 
-# Directly install Tesseract and English langpack
-sudo dnf install -y https://dl.fedoraproject.org/pub/fedora/linux/releases/39/Everything/x86_64/os/Packages/t/tesseract-5.3.3-2.fc39.x86_64.rpm \
-https://dl.fedoraproject.org/pub/fedora/linux/releases/39/Everything/x86_64/os/Packages/t/tesseract-langpack-eng-5.3.3-2.fc39.noarch.rpm --nogpgcheck
+# 1. Add the SPAL repository for AL2023 (contains Tesseract)
+# This bypasses the EPEL dependency error.
+sudo dnf install -y https://github.com/stewartsmith/al2023-spal/releases/latest/download/spal-release.noarch.rpm
 
-# Explicitly grant execution permissions to the binary for the web user
+# 2. Install Tesseract and the English language pack
+sudo dnf install -y tesseract tesseract-devel tesseract-langpack-eng
+
+# 3. Ensure the binary is executable
 sudo chmod +x /usr/bin/tesseract
