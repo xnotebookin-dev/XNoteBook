@@ -18,108 +18,276 @@
             margin: 0; padding: 0;
             background-color: var(--light-green);
             min-height: 100vh;
-            display: flex; align-items: center; justify-content: center;
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
         }
         .container {
-            background: #ffffff; width: 100%; max-width: 520px;
-            padding: 40px; border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: flex;
+            min-height: 100vh;
+            gap: 0;
         }
-        .result-header { text-align: center; margin-bottom: 30px; }
-        .icon-container {
-            width: 80px; height: 80px; margin: 0 auto 20px;
-            border-radius: 50%; display: flex; align-items: center;
-            justify-content: center; font-size: 40px;
+
+        /* Left Panel - PDF Preview */
+        .preview-panel {
+            flex: 1;
+            background: #ffffff;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
         }
-        .icon-container.success { background-color: var(--light-green); color: var(--primary-green); }
-        .icon-container.error { background-color: var(--error-light); color: var(--error-red); }
-        h1 { color: var(--text-dark); font-size: 26px; margin: 0 0 10px 0; }
-        .subtitle { font-size: 15px; color: #666; }
+
         .preview-container {
-            margin: 30px 0; border: 2px solid var(--border-green);
-            border-radius: 10px; overflow: hidden; background-color: #fafafa;
-            height: 350px; position: relative;
+            flex: 1;
+            border: 2px solid var(--border-green);
+            border-radius: 10px;
+            overflow: hidden;
+            background-color: #fafafa;
+            position: relative;
+            min-height: 500px;
         }
-        #pdfFrame { width: 100%; height: 100%; border: none; display: none; }
+
+        #pdfFrame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: none;
+        }
+
         .pdf-placeholder {
-            height: 100%; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; text-align: center; padding: 20px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
         }
-        .pdf-icon { font-size: 60px; opacity: 0.2; margin-bottom: 10px; }
+
+        .pdf-icon {
+            font-size: 60px;
+            opacity: 0.2;
+            margin-bottom: 10px;
+        }
+
         .preview-overlay {
-            position: absolute; bottom: 0; left: 0; right: 0;
-            background: rgba(76, 175, 80, 0.95); color: white;
-            padding: 8px; text-align: center; font-size: 12px; font-weight: 600;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(76, 175, 80, 0.95);
+            color: white;
+            padding: 12px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
         }
-        .file-info-box { background-color: var(--light-green); padding: 15px; border-radius: 8px; margin: 20px 0; }
-        .info-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
-        .info-label { color: #666; }
-        .info-value { color: var(--text-dark); font-weight: 600; }
+
+        .fallback-link {
+            color: var(--primary-green);
+            font-size: 13px;
+            text-decoration: underline;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        /* Right Panel - Actions */
+        .action-panel {
+            width: 380px;
+            background: #ffffff;
+            padding: 40px 30px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -2px 0 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .result-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .icon-container {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+        }
+
+        .icon-container.success {
+            background-color: var(--light-green);
+            color: var(--primary-green);
+        }
+
+        .icon-container.error {
+            background-color: var(--error-light);
+            color: var(--error-red);
+        }
+
+        h1 {
+            color: var(--text-dark);
+            font-size: 26px;
+            margin: 0 0 10px 0;
+        }
+
+        .subtitle {
+            font-size: 15px;
+            color: #666;
+        }
+
+        .file-info-box {
+            background-color: var(--light-green);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            padding: 4px 0;
+        }
+
+        .info-label {
+            color: #666;
+        }
+
+        .info-value {
+            color: var(--text-dark);
+            font-weight: 600;
+        }
 
         .button-group {
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            margin-top: 20px;
+            gap: 12px;
+            margin-top: auto;
         }
-        .button-row {
-            display: flex;
-            gap: 10px;
-            width: 100%;
-        }
+
         .btn {
-            flex: 1; padding: 14px; border: none; border-radius: 8px;
-            font-size: 16px; font-weight: 600; cursor: pointer;
-            text-decoration: none; text-align: center; transition: 0.3s;
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: 0.3s;
+            display: block;
         }
-        .btn-primary { background-color: var(--primary-green); color: white; }
-        .btn-secondary { background-color: white; color: var(--text-dark); border: 2px solid var(--border-green); }
-        .btn-form { background-color: #fbbc04; color: #fff; border: none; }
-        .btn-form:hover { background-color: #f9a825; }
-        .hidden { display: none; }
-        .fallback-link { color: var(--primary-green); font-size: 13px; text-decoration: underline; cursor: pointer; margin-top: 10px; }
+
+        .btn-primary {
+            background-color: var(--primary-green);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+
+        .btn-secondary {
+            background-color: white;
+            color: var(--text-dark);
+            border: 2px solid var(--border-green);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--light-green);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Error State - Centered */
+        #errorState .container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #errorState .action-panel {
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .action-panel {
+                width: 100%;
+            }
+
+            .preview-panel {
+                min-height: 400px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div id="successState" class="hidden">
-            <div class="result-header">
-                <div class="icon-container success">✓</div>
-                <h1>Ready to Download</h1>
-                <p class="subtitle">OCR conversion completed successfully</p>
-            </div>
-
-            <div class="preview-container">
-                <div id="pdfPlaceholder" class="pdf-placeholder">
-                    <div class="pdf-icon">📄</div>
-                    <p style="font-size: 14px; color: #999;">Loading preview...</p>
-                    <div id="fallback" class="fallback-link hidden">Preview not loading? Click to open.</div>
+    <div id="successState" class="hidden">
+        <div class="container">
+            <!-- Left Panel - PDF Preview -->
+            <div class="preview-panel">
+                <div class="preview-container">
+                    <div id="pdfPlaceholder" class="pdf-placeholder">
+                        <div class="pdf-icon">📄</div>
+                        <p style="font-size: 14px; color: #999;">Loading preview...</p>
+                        <div id="fallback" class="fallback-link hidden">Preview not loading? Click to open.</div>
+                    </div>
+                    <iframe id="pdfFrame"></iframe>
+                    <div class="preview-overlay">Searchable PDF Generated</div>
                 </div>
-                <iframe id="pdfFrame"></iframe>
-                <div class="preview-overlay">Searchable PDF Generated</div>
             </div>
 
-            <div class="file-info-box">
-                <div class="info-row"><span class="info-label">File:</span><span class="info-value" id="successFileName">document.pdf</span></div>
-                <div class="info-row"><span class="info-label">Status:</span><span class="info-value" style="color: var(--primary-green);">Success</span></div>
-            </div>
+            <!-- Right Panel - Actions -->
+            <div class="action-panel">
+                <div class="result-header">
+                    <div class="icon-container success">✓</div>
+                    <h1>Ready to Download</h1>
+                    <p class="subtitle">OCR conversion completed successfully</p>
+                </div>
 
-            <div class="button-group">
-                <button class="btn btn-primary" id="downloadBtn">Download PDF</button>
-                <div class="button-row">
+                <div class="file-info-box">
+                    <div class="info-row">
+                        <span class="info-label">File:</span>
+                        <span class="info-value" id="successFileName">document.pdf</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value" style="color: var(--primary-green);">Success</span>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="downloadBtn">Download PDF</button>
                     <a href="/" class="btn btn-secondary">New Upload</a>
-                    <a href="YOUR_GOOGLE_FORM_URL_HERE" target="_blank" class="btn btn-secondary">Give Feedback</a>
+                    <a href="https://docs.google.com/forms/d/e/1FAIpQLSc2XEItYrMJuIBg6x38fGSR0WapqvvFSfKzIjoVW6KT5fY_EA/viewform?usp=dialog" target="_blank" class="btn btn-secondary">Give Feedback</a>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div id="errorState" class="hidden">
-            <div class="result-header">
-                <div class="icon-container error">✕</div>
-                <h1>Process Failed</h1>
+    <div id="errorState" class="hidden">
+        <div class="container">
+            <div class="action-panel">
+                <div class="result-header">
+                    <div class="icon-container error">✕</div>
+                    <h1>Process Failed</h1>
+                </div>
+                <div class="button-group">
+                    <a href="/" class="btn btn-primary">Try Again</a>
+                </div>
             </div>
-            <div class="button-group"><a href="/" class="btn btn-primary">Try Again</a></div>
         </div>
     </div>
 
