@@ -7,10 +7,11 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 from werkzeug.utils import secure_filename
 import os
 import sqlite3
-from datetime import datetime
 import uuid
 import threading
 from config import config
+from datetime import datetime, timedelta
+import time
 
 # Import OCR processing functions - USING TESSERACT
 from pdf2image import convert_from_path
@@ -198,6 +199,58 @@ def update_upload_status(job_id, status, error_message=None, processing_time=Non
     except Exception as e:
         print(f"Error updating upload status: {e}")
 
+# ============================================
+# CLEAN UP SCHEDULER
+# ============================================
+
+def cleanup_old_files(hours=24):
+    """Delete files older than specified hours"""
+    try:
+        cutoff_time = time.time() - (hours * 3600)
+        deleted_count = 0
+
+        # Clean uploads folder
+        upload_folder = app.config['UPLOAD_FOLDER']
+        for filename in os.listdir(upload_folder):
+            file_path = os.path.join(upload_folder, filename)
+            if os.path.isfile(file_path):
+                if os.path.getmtime(file_path) < cutoff_time:
+                    os.remove(file_path)
+                    deleted_count += 1
+                    print(f"🗑️ Deleted old upload: {filename}")
+
+        # Clean processed folder
+        processed_folder = app.config['PROCESSED_FOLDER']
+        for filename in os.listdir(processed_folder):
+            file_path = os.path.join(processed_folder, filename)
+            if os.path.isfile(file_path):
+                if os.path.getmtime(file_path) < cutoff_time:
+                    os.remove(file_path)
+                    deleted_count += 1
+                    print(f"🗑️ Deleted old processed file: {filename}")
+
+        print(f"✅ Cleanup complete: {deleted_count} files deleted")
+        return deleted_count
+
+    except Exception as e:
+        print(f"⚠️ Cleanup error: {e}")
+        return 0
+
+
+def start_cleanup_scheduler(interval_hours=6, file_age_hours=24):
+    """Run cleanup periodically in background"""
+
+    def cleanup_task():
+        while True:
+            time.sleep(interval_hours * 3600)  # Wait interval
+            print(f"\n{'=' * 50}")
+            print(f"🧹 Running scheduled cleanup (files older than {file_age_hours}h)")
+            print(f"{'=' * 50}")
+            cleanup_old_files(file_age_hours)
+
+    thread = threading.Thread(target=cleanup_task, daemon=True)
+    thread.start()
+    print(f"✅ Cleanup scheduler started (every {interval_hours}h, deletes files older than {file_age_hours}h)")
 
 # ============================================
 # TESSERACT OCR PROCESSING FUNCTIONS
@@ -676,6 +729,9 @@ def analytics():
 if __name__ == '__main__':
     with app.app_context():
         init_database()
+
+    # Start automatic cleanup (runs every 6 hours, deletes files older than 24 hours)
+    start_cleanup_scheduler(interval_hours=6, file_age_hours=24)
 
     port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port)
