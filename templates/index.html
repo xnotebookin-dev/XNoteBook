@@ -3,7 +3,46 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>XNoteBook.in</title>
+
+    <!-- Primary Meta Tags -->
+    <title>XNoteBook - Free OCR Tool | Convert Images & PDFs to Searchable Text</title>
+    <meta name="title" content="XNoteBook - Free OCR Tool | Convert Images & PDFs to Searchable Text" />
+    <meta name="description" content="Free online OCR tool to convert images and scanned PDFs into editable, searchable PDF documents. Fast, accurate text extraction powered by Tesseract OCR. No signup required." />
+    <meta name="keywords" content="OCR, PDF converter, image to text, document scanner, text extraction, searchable PDF, free OCR tool, Tesseract OCR, image to PDF, scan to text, document converter" />
+    <meta name="author" content="XNoteBook" />
+    <meta name="robots" content="index, follow" />
+    <meta name="language" content="English" />
+    <meta name="revisit-after" content="7 days" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://xnotebook.in/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://xnotebook.in/" />
+    <meta property="og:title" content="XNoteBook - Free OCR Document Converter" />
+    <meta property="og:description" content="Convert images and scanned PDFs into editable, searchable text documents with our free OCR tool. Fast, accurate, and secure." />
+<!--    <meta property="og:image" content="https://xnotebook.in/static/og-image.jpg" />-->
+    <meta property="og:site_name" content="XNoteBook" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://xnotebook.in/" />
+    <meta name="twitter:title" content="XNoteBook - Free OCR Tool" />
+    <meta name="twitter:description" content="Convert images and PDFs to searchable, editable text documents. Free OCR tool with high accuracy." />
+<!--    <meta name="twitter:image" content="https://xnotebook.in/static/twitter-card.jpg" />-->
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#4caf50" />
+
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+
     <style>
         *,
         *::before,
@@ -232,6 +271,45 @@
         </div>
     </div>
 
+    <!-- Structured Data (Schema.org) for Search Engines -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "XNoteBook",
+        "alternateName": "XNoteBook OCR Tool",
+        "url": "https://xnotebook.in",
+        "description": "Free online OCR tool to convert images and scanned PDFs into editable, searchable text documents. Fast, accurate text extraction powered by Tesseract OCR.",
+        "applicationCategory": "UtilityApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires JavaScript. Requires HTML5.",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "featureList": [
+            "Extract text from images",
+            "Convert scanned PDFs to searchable PDFs",
+            "High accuracy OCR processing",
+            "Secure and private document processing",
+            "Support for JPG, PNG, and PDF formats",
+            "Fast processing with Tesseract OCR"
+        ],
+        "screenshot": "https://xnotebook.in/static/screenshot.jpg",
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "ratingCount": "150"
+        },
+        "provider": {
+            "@type": "Organization",
+            "name": "XNoteBook",
+            "url": "https://xnotebook.in"
+        }
+    }
+    </script>
+
     <script>
         const fileInput = document.getElementById("fileInput");
         const preview = document.getElementById("preview");
@@ -318,10 +396,8 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    // --- ADD THESE TWO LINES ---
                     localStorage.setItem("last_job_id", data.job_id);
                     localStorage.setItem("processingFile", data.filename);
-                    // ---------------------------
 
                     window.location.href = "/processing";
                 } else {

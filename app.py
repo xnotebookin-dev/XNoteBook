@@ -12,6 +12,8 @@ import threading
 from config import config
 from datetime import datetime, timedelta
 import time
+from flask import make_response
+
 
 # Import OCR processing functions - USING TESSERACT
 from pdf2image import convert_from_path
@@ -636,6 +638,51 @@ def result():
     """Result page"""
     track_visit('result')
     return render_template('result.html')
+
+
+@app.route('/robots.txt')
+def robots():
+    """Serve robots.txt for search engines"""
+    return send_file('robots.txt', mimetype='text/plain')
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    """Generate dynamic sitemap"""
+    pages = []
+
+    # Add static pages
+    pages.append({
+        'loc': 'https://xnotebook.in/',
+        'lastmod': datetime.now().strftime('%Y-%m-%d'),
+        'changefreq': 'weekly',
+        'priority': '1.0'
+    })
+
+    pages.append({
+        'loc': 'https://xnotebook.in/analytics',
+        'lastmod': datetime.now().strftime('%Y-%m-%d'),
+        'changefreq': 'daily',
+        'priority': '0.5'
+    })
+
+    # Build XML
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+
+    for page in pages:
+        xml += '  <url>\n'
+        xml += f'    <loc>{page["loc"]}</loc>\n'
+        xml += f'    <lastmod>{page["lastmod"]}</lastmod>\n'
+        xml += f'    <changefreq>{page["changefreq"]}</changefreq>\n'
+        xml += f'    <priority>{page["priority"]}</priority>\n'
+        xml += '  </url>\n'
+
+    xml += '</urlset>'
+
+    response = make_response(xml)
+    response.headers['Content-Type'] = 'application/xml'
+    return response
 
 
 @app.route('/download/<job_id>')

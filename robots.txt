@@ -1,0 +1,11 @@
+# Allow all search engines to crawl everything
+User-agent: *
+Allow: /
+
+# Disallow admin and processing endpoints
+Disallow: /admin/
+Disallow: /status/
+Disallow: /download/
+
+# Sitemap location
+Sitemap: https://xnotebook.in/sitemap.xml
