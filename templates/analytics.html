@@ -364,10 +364,11 @@
                             <th>Country</th>
                             <th>Status</th>
                             <th>Upload Time</th>
+                            <th>Processing Time</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for filename, status, country, timestamp in data.recent_uploads %}
+                        {% for filename, status, country, timestamp, proc_time in data.recent_uploads %}
                         <tr>
                             <td>{{ filename }}</td>
                             <td>{{ country }}</td>
@@ -377,6 +378,13 @@
                                 </span>
                             </td>
                             <td>{{ timestamp }}</td>
+                            <td>
+                                {% if proc_time %}
+                                    {{ "%.1f"|format(proc_time) }}s
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
