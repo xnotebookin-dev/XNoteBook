@@ -726,7 +726,7 @@ def analytics():
         conn = sqlite3.connect(app.config['DATABASE_PATH'])
         cursor = conn.cursor()
 
-        cursor.execute('SELECT COUNT(*) FROM visits')
+        cursor.execute('SELECT COUNT(*) FROM (SELECT distinct(ip_address) FROM visits)')
         total_visits = cursor.fetchone()[0]
 
         cursor.execute('SELECT COUNT(*) FROM uploads')
