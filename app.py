@@ -14,6 +14,11 @@ from datetime import datetime, timedelta
 import time
 from flask import make_response
 
+import torch
+from transformers import AutoProcessor, Florence2ForConditionalGeneration
+from datetime import datetime, timedelta
+import os
+
 
 # Import OCR processing functions - USING TESSERACT
 from pdf2image import convert_from_path
@@ -70,6 +75,21 @@ except Exception as e:
     print("⚠️ Install with: sudo apt-get install tesseract-ocr")
 
 print("="*50)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+# 3. Load Model using the CORRECT Class
+# We use the 'florence-community' version which is compatible with the native library
+model_id = "florence-community/Florence-2-base"
+
+print(f"Loading {model_id}...")
+model = Florence2ForConditionalGeneration.from_pretrained(
+    model_id,
+    torch_dtype=torch_dtype
+).to(device)
+
+processor = AutoProcessor.from_pretrained(model_id)
 
 # ============================================
 # DATABASE SETUP AND HELPER FUNCTIONS
@@ -283,7 +303,7 @@ def preprocess_image(image_path):
     return preprocessed_path
 
 
-def input_to_images(input_path, dpi=150):
+def input_to_images(input_path, dpi=300):
     """Convert PDF or image input to list of image paths - OPTIMIZED"""
     images = []
     if input_path.lower().endswith(".pdf"):
@@ -320,48 +340,61 @@ def input_to_images(input_path, dpi=150):
 def ocr_with_boxes(image_path):
     """Perform OCR using Tesseract and return text blocks with bounding boxes"""
     # Preprocess image for better results
-    processed_path = preprocess_image(image_path)
+    # processed_path = preprocess_image(image_path)
 
     # Get OCR data with bounding boxes
     # PSM 3 = Fully automatic page segmentation (best for documents)
     # OEM 3 = Default OCR Engine Mode (best accuracy)
-    custom_config = r'--oem 3 --psm 3'
+    # custom_config = r'--oem 3 --psm 3'
 
-    data = pytesseract.image_to_data(
-        processed_path,
-        output_type=pytesseract.Output.DICT,
-        config=custom_config
+    # data = pytesseract.image_to_data(
+    #     processed_path,
+    #     output_type=pytesseract.Output.DICT,
+    #     config=custom_config
+    # )
+
+
+    url = image_path
+    image = Image.open(url).convert("RGB")
+
+    # 5. Run Inference
+    # <OCR> just reads text.
+    # <OD> detects objects.
+    prompt = "<OCR_WITH_REGION>"
+
+    inputs = processor(text=prompt, images=image, return_tensors="pt").to(device, torch_dtype)
+
+    generated_ids = model.generate(
+        input_ids=inputs["input_ids"],
+        pixel_values=inputs["pixel_values"],
+        max_new_tokens=1024,
+        num_beams=3
+    )
+
+    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+
+    # 6. Post-Process
+    parsed_answer = processor.post_process_generation(
+        generated_text,
+        task=prompt,
+        image_size=(image.width, image.height)
     )
 
     blocks = []
-    n_boxes = len(data['text'])
+    quad_boxes = parsed_answer['<OCR_WITH_REGION>'].get('quad_boxes', [])
+    labels = parsed_answer['<OCR_WITH_REGION>'].get('labels', [])
 
-    for i in range(n_boxes):
-        # Filter by confidence (skip low confidence detections)
-        if int(data['conf'][i]) > 30:
-            text = data['text'][i].strip()
-            if text:  # Skip empty text
-                x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
-
-                # Convert to corner coordinates format (matching EasyOCR format)
-                bbox = [
-                    [x, y],           # Top-left
-                    [x + w, y],       # Top-right
-                    [x + w, y + h],   # Bottom-right
-                    [x, y + h]        # Bottom-left
-                ]
-
-                blocks.append({
-                    "bbox": bbox,
-                    "text": text,
-                    "confidence": data['conf'][i] / 100.0  # Convert to 0-1 scale
-                })
-
-    # Clean up preprocessed image
-    try:
-        os.remove(processed_path)
-    except:
-        pass
+    for box, text in zip(quad_boxes, labels):
+        real_box = [
+            (box[0], box[1]), # Top-Left
+            (box[2], box[3]), # Top-Right
+            (box[4], box[5]), # Bottom-Right
+            (box[6], box[7])  # Bottom-Left
+        ]
+        blocks.append({
+            "bbox": real_box,
+            "text": text,
+            })
 
     return blocks
 
@@ -436,7 +469,7 @@ def process_document(input_path, output_pdf, job_id):
         print(f"{'='*50}")
 
         # Convert input to images
-        image_paths = input_to_images(input_path, dpi=OPTIMIZED_DPI)
+        image_paths = input_to_images(input_path, dpi=300)
         print(f"📄 Converted to {len(image_paths)} page(s)")
 
         # Perform OCR on each image
@@ -445,7 +478,7 @@ def process_document(input_path, output_pdf, job_id):
             print(f"🔍 OCR processing page {i+1}/{len(image_paths)}...")
             blocks = ocr_with_boxes(img)
             all_blocks.append(blocks)
-            print(f"  ✓ Found {len(blocks)} text blocks with avg confidence {sum([b['confidence'] for b in blocks])/len(blocks):.2%}" if blocks else "  ✓ No text detected")
+            print(f"  ✓ Found {len(blocks)}")
 
         # Create searchable PDF
         print(f"📝 Creating searchable PDF...")
