@@ -39,5 +39,8 @@ Flask-CORS==5.0.0
 # Optional: Environment Variables
 python-dotenv==1.0.1
 
-torch==2.9.1
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+
 transformers==4.57.3
