@@ -1,6 +1,6 @@
 """
 XNoteBook - OCR Document Converter Web Application
-Tesseract-powered version for fast processing
+Production-ready async architecture with proper job queue
 """
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
@@ -13,14 +13,16 @@ from config import config
 from datetime import datetime, timedelta
 import time
 from flask import make_response
+from queue import Queue
+from threading import Lock
+import traceback
 
 import torch
 from transformers import AutoProcessor, Florence2ForConditionalGeneration
 from datetime import datetime, timedelta
 import os
 
-
-# Import OCR processing functions - USING TESSERACT
+# Import OCR processing functions
 from pdf2image import convert_from_path
 from PIL import Image
 import pytesseract
@@ -29,9 +31,8 @@ import fitz
 import numpy as np
 
 # ============================================
-# TESSERACT PATH CONFIGURATION (ADDED)
+# TESSERACT PATH CONFIGURATION
 # ============================================
-# This is the specific fix for the "not in PATH" error on AWS [cite: 65, 67]
 tesseract_bin = "/usr/bin/tesseract"
 if os.path.exists(tesseract_bin):
     pytesseract.pytesseract.tesseract_cmd = tesseract_bin
@@ -55,32 +56,114 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
 
 # ============================================
+# JOB QUEUE SYSTEM - PRODUCTION READY
+# ============================================
+
+class JobQueue:
+    """Thread-safe job queue with worker pool"""
+
+    def __init__(self, num_workers=2):
+        self.queue = Queue()
+        self.workers = []
+        self.num_workers = num_workers
+        self.lock = Lock()
+        self.active_jobs = {}  # Track currently processing jobs
+
+    def start(self):
+        """Start worker threads"""
+        for i in range(self.num_workers):
+            worker = threading.Thread(target=self._worker, daemon=True, name=f"Worker-{i+1}")
+            worker.start()
+            self.workers.append(worker)
+        print(f"✅ Started {self.num_workers} worker threads")
+
+    def _worker(self):
+        """Worker thread that processes jobs from queue"""
+        while True:
+            try:
+                job = self.queue.get()
+                if job is None:  # Poison pill to stop worker
+                    break
+
+                job_id = job['job_id']
+
+                # Mark job as active
+                with self.lock:
+                    self.active_jobs[job_id] = {
+                        'started_at': datetime.now(),
+                        'thread_name': threading.current_thread().name
+                    }
+
+                print(f"[{threading.current_thread().name}] Starting job: {job_id}")
+
+                # Process the job
+                process_document(
+                    job['input_path'],
+                    job['output_path'],
+                    job_id
+                )
+
+                # Remove from active jobs
+                with self.lock:
+                    self.active_jobs.pop(job_id, None)
+
+                self.queue.task_done()
+
+            except Exception as e:
+                print(f"Worker error: {e}")
+                traceback.print_exc()
+
+    def add_job(self, job_id, input_path, output_path):
+        """Add a job to the queue"""
+        job = {
+            'job_id': job_id,
+            'input_path': input_path,
+            'output_path': output_path,
+            'queued_at': datetime.now()
+        }
+        self.queue.put(job)
+
+        # Get queue position
+        queue_position = self.queue.qsize()
+        print(f"📋 Job {job_id} added to queue (position: {queue_position})")
+        return queue_position
+
+    def get_queue_info(self):
+        """Get current queue status"""
+        with self.lock:
+            return {
+                'queue_size': self.queue.qsize(),
+                'active_jobs': len(self.active_jobs),
+                'active_job_ids': list(self.active_jobs.keys())
+            }
+
+# Initialize global job queue
+job_queue = JobQueue(num_workers=2)
+
+# ============================================
 # TESSERACT CONFIGURATION
 # ============================================
-# Tesseract doesn't need model downloads - it's ready immediately!
-OPTIMIZED_DPI = 150  # Using 150 DPI for 4x faster processing
+OPTIMIZED_DPI = 150
 
 print("="*50)
 print("🚀 TESSERACT OCR READY")
 print("="*50)
 
-# Test Tesseract installation
 try:
     version = pytesseract.get_tesseract_version()
     print(f"✅ Tesseract version: {version}")
     print(f"📊 Processing DPI: {OPTIMIZED_DPI}")
-    print("⚡ No model download required - ready to process!")
 except Exception as e:
     print(f"⚠️ Tesseract not found: {e}")
-    print("⚠️ Install with: sudo apt-get install tesseract-ocr")
 
 print("="*50)
 
+# ============================================
+# FLORENCE-2 MODEL INITIALIZATION
+# ============================================
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-# 3. Load Model using the CORRECT Class
-# We use the 'florence-community' version which is compatible with the native library
 model_id = "florence-community/Florence-2-base"
 
 print(f"Loading {model_id}...")
@@ -92,15 +175,21 @@ model = Florence2ForConditionalGeneration.from_pretrained(
 processor = AutoProcessor.from_pretrained(model_id)
 
 # ============================================
-# DATABASE SETUP AND HELPER FUNCTIONS
+# DATABASE SETUP
 # ============================================
+
+def get_db_connection():
+    """Get thread-safe database connection"""
+    conn = sqlite3.connect(app.config['DATABASE_PATH'], check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_database():
     """Initialize SQLite database with required tables"""
-    conn = sqlite3.connect(app.config['DATABASE_PATH'])
+    conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Create visits table for tracking page visits
+    # Create visits table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS visits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +202,7 @@ def init_database():
         )
     ''')
 
-    # Create uploads table for tracking document uploads
+    # Create uploads table with enhanced status tracking
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS uploads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,13 +213,44 @@ def init_database():
             ip_address TEXT,
             country TEXT,
             city TEXT,
-            status TEXT DEFAULT 'pending',
+            status TEXT DEFAULT 'queued',
+            queue_position INTEGER,
+            progress_percent INTEGER DEFAULT 0,
+            current_step TEXT,
             error_message TEXT,
             upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            processing_started_timestamp DATETIME,
             processed_timestamp DATETIME,
             processing_time REAL
         )
     ''')
+
+    # === MIGRATION FIX: Check and add missing columns for existing databases ===
+    try:
+        cursor.execute("PRAGMA table_info(uploads)")
+        existing_columns = {row['name'] for row in cursor.fetchall()}
+
+        # Define columns that might be missing in older DB versions
+        new_columns = {
+            'queue_position': 'INTEGER',
+            'progress_percent': 'INTEGER DEFAULT 0',
+            'current_step': 'TEXT',
+            'error_message': 'TEXT',
+            'processing_started_timestamp': 'DATETIME',
+            'processed_timestamp': 'DATETIME',
+            'processing_time': 'REAL'
+        }
+
+        for col_name, col_type in new_columns.items():
+            if col_name not in existing_columns:
+                print(f"🔧 Migrating database: Adding column '{col_name}'")
+                try:
+                    cursor.execute(f"ALTER TABLE uploads ADD COLUMN {col_name} {col_type}")
+                except Exception as e:
+                    print(f"⚠️ Error adding column {col_name}: {e}")
+
+    except Exception as e:
+        print(f"⚠️ Migration check failed: {e}")
 
     conn.commit()
     conn.close()
@@ -167,7 +287,7 @@ def track_visit(page):
         user_agent = request.headers.get('User-Agent', '')
         country, city = get_location_from_ip(ip_address)
 
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
@@ -181,7 +301,7 @@ def track_visit(page):
         print(f"Error tracking visit: {e}")
 
 
-def track_upload(job_id, filename, file_size, file_type):
+def track_upload(job_id, filename, file_size, file_type, queue_position):
     """Track a document upload in the database"""
     try:
         ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -190,13 +310,13 @@ def track_upload(job_id, filename, file_size, file_type):
 
         country, city = get_location_from_ip(ip_address)
 
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
-            INSERT INTO uploads (job_id, filename, file_size, file_type, ip_address, country, city)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (job_id, filename, file_size, file_type, ip_address, country, city))
+            INSERT INTO uploads (job_id, filename, file_size, file_type, ip_address, country, city, queue_position, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+        ''', (job_id, filename, file_size, file_type, ip_address, country, city, queue_position))
 
         conn.commit()
         conn.close()
@@ -204,17 +324,40 @@ def track_upload(job_id, filename, file_size, file_type):
         print(f"Error tracking upload: {e}")
 
 
-def update_upload_status(job_id, status, error_message=None, processing_time=None):
+def update_upload_status(job_id, status, error_message=None, processing_time=None, progress=None, step=None):
     """Update the status of a document upload"""
     try:
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute('''
-            UPDATE uploads 
-            SET status = ?, error_message = ?, processed_timestamp = CURRENT_TIMESTAMP, processing_time = ?
-            WHERE job_id = ?
-        ''', (status, error_message, processing_time, job_id))
+        # Build update query dynamically
+        updates = ['status = ?']
+        params = [status]
+
+        if error_message is not None:
+            updates.append('error_message = ?')
+            params.append(error_message)
+
+        if processing_time is not None:
+            updates.append('processing_time = ?')
+            params.append(processing_time)
+            updates.append('processed_timestamp = CURRENT_TIMESTAMP')
+
+        if progress is not None:
+            updates.append('progress_percent = ?')
+            params.append(progress)
+
+        if step is not None:
+            updates.append('current_step = ?')
+            params.append(step)
+
+        if status == 'processing':
+            updates.append('processing_started_timestamp = CURRENT_TIMESTAMP')
+
+        params.append(job_id)
+
+        query = f"UPDATE uploads SET {', '.join(updates)} WHERE job_id = ?"
+        cursor.execute(query, params)
 
         conn.commit()
         conn.close()
@@ -264,7 +407,7 @@ def start_cleanup_scheduler(interval_hours=6, file_age_hours=24):
 
     def cleanup_task():
         while True:
-            time.sleep(interval_hours * 3600)  # Wait interval
+            time.sleep(interval_hours * 3600)
             print(f"\n{'=' * 50}")
             print(f"🧹 Running scheduled cleanup (files older than {file_age_hours}h)")
             print(f"{'=' * 50}")
@@ -275,44 +418,34 @@ def start_cleanup_scheduler(interval_hours=6, file_age_hours=24):
     print(f"✅ Cleanup scheduler started (every {interval_hours}h, deletes files older than {file_age_hours}h)")
 
 # ============================================
-# TESSERACT OCR PROCESSING FUNCTIONS
+# OCR PROCESSING FUNCTIONS WITH PROGRESS
 # ============================================
 
 def preprocess_image(image_path):
     """Preprocess image for better OCR results"""
     img = cv2.imread(image_path)
-
-    # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # Apply slight Gaussian blur to reduce noise
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-
-    # Apply adaptive thresholding for better text detection
     thresh = cv2.adaptiveThreshold(
         blurred, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
         11, 2
     )
-
-    # Save preprocessed image
     preprocessed_path = f"{image_path}_preprocessed.png"
     cv2.imwrite(preprocessed_path, thresh)
-
     return preprocessed_path
 
 
 def input_to_images(input_path, dpi=300):
-    """Convert PDF or image input to list of image paths - OPTIMIZED"""
+    """Convert PDF or image input to list of image paths"""
     images = []
     if input_path.lower().endswith(".pdf"):
-        # Convert PDF pages to images at optimized DPI
         print(f"📄 Converting PDF to images at {dpi} DPI...")
         pages = convert_from_path(
             input_path,
             dpi=dpi,
-            fmt='jpeg',  # JPEG is faster than PNG
+            fmt='jpeg',
             jpegopt={'quality': 85, 'optimize': True}
         )
         for i, page in enumerate(pages):
@@ -321,9 +454,8 @@ def input_to_images(input_path, dpi=300):
             images.append(img_path)
             print(f"  ✓ Page {i+1} converted")
     else:
-        # Optimize image if too large
         img = Image.open(input_path)
-        max_dimension = 3000  # Limit max width/height
+        max_dimension = 3000
         if max(img.size) > max_dimension:
             print(f"📏 Resizing large image...")
             ratio = max_dimension / max(img.size)
@@ -338,28 +470,8 @@ def input_to_images(input_path, dpi=300):
 
 
 def ocr_with_boxes(image_path):
-    """Perform OCR using Tesseract and return text blocks with bounding boxes"""
-    # Preprocess image for better results
-    # processed_path = preprocess_image(image_path)
-
-    # Get OCR data with bounding boxes
-    # PSM 3 = Fully automatic page segmentation (best for documents)
-    # OEM 3 = Default OCR Engine Mode (best accuracy)
-    # custom_config = r'--oem 3 --psm 3'
-
-    # data = pytesseract.image_to_data(
-    #     processed_path,
-    #     output_type=pytesseract.Output.DICT,
-    #     config=custom_config
-    # )
-
-
-    url = image_path
-    image = Image.open(url).convert("RGB")
-
-    # 5. Run Inference
-    # <OCR> just reads text.
-    # <OD> detects objects.
+    """Perform OCR using Florence-2 and return text blocks with bounding boxes"""
+    image = Image.open(image_path).convert("RGB")
     prompt = "<OCR_WITH_REGION>"
 
     inputs = processor(text=prompt, images=image, return_tensors="pt").to(device, torch_dtype)
@@ -373,7 +485,6 @@ def ocr_with_boxes(image_path):
 
     generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
 
-    # 6. Post-Process
     parsed_answer = processor.post_process_generation(
         generated_text,
         task=prompt,
@@ -386,15 +497,15 @@ def ocr_with_boxes(image_path):
 
     for box, text in zip(quad_boxes, labels):
         real_box = [
-            (box[0], box[1]), # Top-Left
-            (box[2], box[3]), # Top-Right
-            (box[4], box[5]), # Bottom-Right
-            (box[6], box[7])  # Bottom-Left
+            (box[0], box[1]),
+            (box[2], box[3]),
+            (box[4], box[5]),
+            (box[6], box[7])
         ]
         blocks.append({
             "bbox": real_box,
             "text": text,
-            })
+        })
 
     return blocks
 
@@ -407,91 +518,89 @@ def create_searchable_pdf(image_paths, all_blocks, output_pdf):
         img = Image.open(img_path)
         width, height = img.size
 
-        # Create new page with image
         page = doc.new_page(width=float(width), height=float(height))
+        page.insert_image(page.rect, filename=img_path, keep_proportion=True)
 
-        # Insert image with compression
-        page.insert_image(
-            page.rect,
-            filename=img_path,
-            keep_proportion=True
-        )
-
-        # Add invisible text layer
         for block in blocks:
             text = block["text"]
             bbox = block["bbox"]
 
-            # Extract bounding box coordinates
             x1 = float(bbox[0][0])
             y1 = float(bbox[0][1])
             x2 = float(bbox[2][0])
             y2 = float(bbox[2][1])
 
-            # Calculate appropriate font size
             font_size = max(6.0, min(40.0, y2 - y1))
 
-            # Skip empty or invalid text
             if not text or font_size <= 0:
                 continue
 
             try:
-                # Insert invisible text
                 page.insert_text(
                     fitz.Point(x1, y2),
                     text,
                     fontsize=float(font_size),
                     fontname="helv",
-                    render_mode=3,  # Invisible text (searchable but not visible)
+                    render_mode=3,
                     overlay=True
                 )
             except Exception as e:
                 print(f"  ⚠️ Skipping text block: {e}")
 
-    # Save the PDF with compression
-    doc.save(
-        output_pdf,
-        garbage=4,      # Maximum garbage collection
-        deflate=True,   # Compress streams
-        clean=True      # Remove redundant objects
-    )
+    doc.save(output_pdf, garbage=4, deflate=True, clean=True)
     doc.close()
 
 
 def process_document(input_path, output_pdf, job_id):
-    """Main function to process document with Tesseract OCR"""
+    """Main function to process document with progress tracking"""
     start_time = datetime.now()
 
     try:
         print(f"\n{'='*50}")
-        print(f"🔄 Processing Job: {job_id}")
+        print(f"📄 Processing Job: {job_id}")
         print(f"📁 File: {os.path.basename(input_path)}")
         print(f"{'='*50}")
+
+        # Update status to processing
+        update_upload_status(job_id, 'processing', progress=5, step='Starting conversion')
 
         # Convert input to images
         image_paths = input_to_images(input_path, dpi=300)
         print(f"📄 Converted to {len(image_paths)} page(s)")
+        update_upload_status(job_id, 'processing', progress=15, step=f'Converted to {len(image_paths)} pages')
 
-        # Perform OCR on each image
+        # Perform OCR on each image with progress updates
         all_blocks = []
+        total_pages = len(image_paths)
+
         for i, img in enumerate(image_paths):
-            print(f"🔍 OCR processing page {i+1}/{len(image_paths)}...")
+            progress = 15 + int((i / total_pages) * 70)  # 15% to 85%
+            update_upload_status(
+                job_id,
+                'processing',
+                progress=progress,
+                step=f'Processing page {i+1} of {total_pages}'
+            )
+
+            print(f"🔍 OCR processing page {i+1}/{total_pages}...")
             blocks = ocr_with_boxes(img)
             all_blocks.append(blocks)
-            print(f"  ✓ Found {len(blocks)}")
+            print(f"  ✓ Found {len(blocks)} text blocks")
 
         # Create searchable PDF
+        update_upload_status(job_id, 'processing', progress=90, step='Creating searchable PDF')
         print(f"📝 Creating searchable PDF...")
         create_searchable_pdf(image_paths, all_blocks, output_pdf)
 
         # Get output file size
-        output_size = os.path.getsize(output_pdf) / (1024 * 1024)  # MB
+        output_size = os.path.getsize(output_pdf) / (1024 * 1024)
         print(f"💾 Output PDF: {output_size:.2f} MB")
 
-        # Clean up temporary image files
+        # Clean up temporary files
+        update_upload_status(job_id, 'processing', progress=95, step='Cleaning up')
         print(f"🧹 Cleaning up temporary files...")
         for img in image_paths:
-            if img != input_path:  # Don't delete original file
+            if img != input_path:
                 try:
                     os.remove(img)
                 except:
@@ -503,14 +612,16 @@ def process_document(input_path, output_pdf, job_id):
         print(f"{'='*50}\n")
 
         # Update status to success
-        update_upload_status(job_id, 'completed', processing_time=processing_time)
+        update_upload_status(job_id, 'completed', processing_time=processing_time, progress=100, step='Complete')
         return True
 
     except Exception as e:
         processing_time = (datetime.now() - start_time).total_seconds()
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
         print(f"❌ ERROR after {processing_time:.1f}s: {e}")
+        print(traceback.format_exc())
         print(f"{'='*50}\n")
-        update_upload_status(job_id, 'failed', str(e), processing_time)
+        update_upload_status(job_id, 'failed', error_msg, processing_time)
         return False
 
 
@@ -532,13 +643,14 @@ def allowed_file(filename):
 def health_check():
     """Health check endpoint for AWS Load Balancer"""
     try:
-        # Quick Tesseract version check
         version = pytesseract.get_tesseract_version()
+        queue_info = job_queue.get_queue_info()
+
         return jsonify({
             'status': 'healthy',
-            'ocr_engine': 'tesseract',
-            'ocr_version': str(version),
+            'ocr_engine': 'florence-2',
             'ocr_ready': True,
+            'queue': queue_info,
             'timestamp': datetime.now().isoformat()
         }), 200
     except Exception as e:
@@ -552,15 +664,14 @@ def health_check():
 
 @app.route('/warmup')
 def warmup():
-    """Warmup endpoint - Tesseract is always ready!"""
+    """Warmup endpoint"""
     try:
         version = pytesseract.get_tesseract_version()
         return jsonify({
             'status': 'ready',
-            'ocr_engine': 'tesseract',
-            'ocr_version': str(version),
+            'ocr_engine': 'florence-2',
             'ocr_loaded': True,
-            'message': 'Tesseract OCR is ready (no model download needed)',
+            'message': 'OCR system is ready',
             'processing_dpi': OPTIMIZED_DPI
         }), 200
     except Exception as e:
@@ -580,7 +691,7 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle file upload"""
+    """Handle file upload - returns immediately, queues for processing"""
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
 
@@ -590,7 +701,7 @@ def upload_file():
         return jsonify({'error': 'No file selected'}), 400
 
     if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
+        return jsonify({'error': 'Invalid file type. Please upload PDF or image files.'}), 400
 
     try:
         job_id = str(uuid.uuid4())
@@ -602,30 +713,34 @@ def upload_file():
         file_size = os.path.getsize(upload_path)
         file_type = filename.rsplit('.', 1)[1].lower()
 
-        track_upload(job_id, filename, file_size, file_type)
+        output_path = os.path.join(app.config['PROCESSED_FOLDER'], f"{job_id}_editable.pdf")
+
+        # Add job to queue
+        queue_position = job_queue.add_job(job_id, upload_path, output_path)
+
+        # Track upload with queue position
+        track_upload(job_id, filename, file_size, file_type, queue_position)
 
         session['job_id'] = job_id
         session['filename'] = filename
 
-        output_path = os.path.join(app.config['PROCESSED_FOLDER'], f"{job_id}_editable.pdf")
+        # Get current queue info
+        queue_info = job_queue.get_queue_info()
 
-        # Start processing in background thread
-        thread = threading.Thread(
-            target=process_document,
-            args=(upload_path, output_path, job_id)
-        )
-        thread.daemon = True  # Allow graceful shutdown
-        thread.start()
-
+        # Return immediately with queue information
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'filename': filename
+            'filename': filename,
+            'queue_position': queue_position,
+            'queue_info': queue_info,
+            'message': 'File uploaded successfully and queued for processing'
         }), 200
 
     except Exception as e:
         print(f"Upload error: {e}")
-        return jsonify({'error': 'Upload failed'}), 500
+        traceback.print_exc()
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 
 @app.route('/processing')
@@ -637,13 +752,15 @@ def processing():
 
 @app.route('/status/<job_id>')
 def check_status(job_id):
-    """Check processing status via API"""
+    """Check processing status via API - Enhanced with progress"""
     try:
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT status, error_message, filename, processing_time
+            SELECT status, error_message, filename, processing_time,
+                   upload_timestamp, processing_started_timestamp, processed_timestamp,
+                   progress_percent, current_step, queue_position
             FROM uploads 
             WHERE job_id = ?
         ''', (job_id,))
@@ -652,16 +769,67 @@ def check_status(job_id):
         conn.close()
 
         if result:
-            status, error_message, filename, processing_time = result
-            return jsonify({
-                'status': status,
-                'error_message': error_message,
-                'filename': filename,
-                'processing_time': processing_time
-            })
+            row = dict(result)
+
+            response = {
+                'status': row['status'],
+                'error_message': row['error_message'],
+                'filename': row['filename'],
+                'processing_time': row['processing_time'],
+                'progress_percent': row['progress_percent'] or 0,
+                'current_step': row['current_step'],
+                'queue_position': row['queue_position']
+            }
+
+            # Calculate estimated time remaining
+            if row['status'] == 'queued':
+                queue_info = job_queue.get_queue_info()
+                response['queue_info'] = queue_info
+                response['estimated_wait_seconds'] = queue_info['queue_size'] * 600  # Estimate 10 min per job
+
+            elif row['status'] == 'processing' and row['processing_started_timestamp']:
+                start_time = datetime.strptime(row['processing_started_timestamp'], '%Y-%m-%d %H:%M:%S')
+                elapsed = (datetime.now() - start_time).total_seconds()
+                progress = row['progress_percent'] or 1
+
+                if progress > 0:
+                    estimated_total = elapsed / (progress / 100)
+                    estimated_remaining = max(0, estimated_total - elapsed)
+                    response['estimated_seconds_remaining'] = int(estimated_remaining)
+                    response['elapsed_seconds'] = int(elapsed)
+
+            return jsonify(response)
         else:
             return jsonify({'error': 'Job not found'}), 404
 
+    except Exception as e:
+        print(f"Status check error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/queue/status')
+def queue_status():
+    """Get current queue status"""
+    try:
+        queue_info = job_queue.get_queue_info()
+
+        # Get queued jobs from database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT job_id, filename, upload_timestamp, queue_position
+            FROM uploads 
+            WHERE status = 'queued'
+            ORDER BY upload_timestamp ASC
+        ''')
+        queued_jobs = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return jsonify({
+            'queue_info': queue_info,
+            'queued_jobs': queued_jobs
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -684,7 +852,6 @@ def sitemap():
     """Generate dynamic sitemap"""
     pages = []
 
-    # Add static pages
     pages.append({
         'loc': 'https://xnotebook.in/',
         'lastmod': datetime.now().strftime('%Y-%m-%d'),
@@ -699,7 +866,6 @@ def sitemap():
         'priority': '0.5'
     })
 
-    # Build XML
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
 
@@ -722,16 +888,21 @@ def sitemap():
 def download_file(job_id):
     """Download or Preview processed PDF"""
     try:
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT filename FROM uploads WHERE job_id = ?', (job_id,))
+        cursor.execute('SELECT filename, status FROM uploads WHERE job_id = ?', (job_id,))
         result = cursor.fetchone()
         conn.close()
 
         if not result:
             return "Job not found", 404
 
-        original_filename = result[0]
+        row = dict(result)
+
+        if row['status'] != 'completed':
+            return f"File not ready. Current status: {row['status']}", 400
+
+        original_filename = row['filename']
         base_name = os.path.splitext(original_filename)[0]
         new_filename = f"editable_{base_name}.pdf"
 
@@ -749,6 +920,7 @@ def download_file(job_id):
 
     except Exception as e:
         print(f"Download error: {e}")
+        traceback.print_exc()
         return "Download failed", 500
 
 
@@ -756,7 +928,7 @@ def download_file(job_id):
 def analytics():
     """Analytics dashboard showing visitor and upload statistics"""
     try:
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute('SELECT COUNT(*) FROM (SELECT distinct(ip_address) FROM visits)')
@@ -803,6 +975,8 @@ def analytics():
         }
         return render_template('analytics.html', data=analytics_data)
     except Exception as e:
+        print(f"Analytics error: {e}")
+        traceback.print_exc()
         return f"Error loading analytics: {e}", 500
 
 
@@ -810,7 +984,9 @@ if __name__ == '__main__':
     with app.app_context():
         init_database()
 
-    # Start automatic cleanup (runs every 6 hours, deletes files older than 24 hours)
+    job_queue.start()
+
+    # Start automatic cleanup
     start_cleanup_scheduler(interval_hours=6, file_age_hours=24)
 
     port = int(os.environ.get("PORT", 8000))
