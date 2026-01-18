@@ -980,14 +980,24 @@ def analytics():
         return f"Error loading analytics: {e}", 500
 
 
+# ... (rest of your app.py code above remains unchanged) ...
+
+# ============================================
+# PRODUCTION STARTUP
+# ============================================
+# Execute these immediately so Gunicorn starts the workers on import
+with app.app_context():
+    init_database()
+
+print("🚀 Starting Background Workers...")
+job_queue.start()
+
+# Start automatic cleanup
+start_cleanup_scheduler(interval_hours=6, file_age_hours=24)
+
+# ============================================
+# LOCAL DEVELOPMENT ENTRY POINT
+# ============================================
 if __name__ == '__main__':
-    with app.app_context():
-        init_database()
-
-    job_queue.start()
-
-    # Start automatic cleanup
-    start_cleanup_scheduler(interval_hours=6, file_age_hours=24)
-
     port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port)
