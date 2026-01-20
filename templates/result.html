@@ -252,7 +252,7 @@
             <!-- Right Panel - Actions -->
             <div class="action-panel">
                 <div class="result-header">
-                    <div class="icon-container success">✓</div>
+                    <div class="icon-container success">✔</div>
                     <h1>Ready to Download</h1>
                     <p class="subtitle">OCR conversion completed successfully</p>
                 </div>
@@ -292,8 +292,8 @@
     </div>
 
     <script>
-        // Retrieve Job ID from localStorage set in index.html
-        const jobId = localStorage.getItem("last_job_id");
+        // Retrieve Job ID from sessionStorage set in index.html
+        const jobId = sessionStorage.getItem("last_job_id");
 
         async function init() {
             if (!jobId) { window.location.href = "/"; return; }

@@ -132,10 +132,10 @@
     </div>
 
     <script>
-        // Get job_id from URL or localStorage
+        // Get job_id from URL or sessionStorage
         const urlParams = new URLSearchParams(window.location.search);
-        const jobId = urlParams.get('job_id') || localStorage.getItem('last_job_id');
-        const filename = urlParams.get('filename') || sessionStorage.getItem('filename') || 'your document';
+        const jobId = urlParams.get('job_id') || sessionStorage.getItem('last_job_id');
+        const filename = urlParams.get('filename') || sessionStorage.getItem('processingFile') || 'your document';
 
         document.getElementById('fileName').textContent = filename;
 

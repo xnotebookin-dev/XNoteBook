@@ -257,15 +257,15 @@
 
         <div class="features">
             <div class="feature-item">
-                <span class="feature-icon">✓</span>
+                <span class="feature-icon">✔</span>
                 <span>Extract text from images and scanned documents</span>
             </div>
             <div class="feature-item">
-                <span class="feature-icon">✓</span>
+                <span class="feature-icon">✔</span>
                 <span>High accuracy OCR processing</span>
             </div>
             <div class="feature-item">
-                <span class="feature-icon">✓</span>
+                <span class="feature-icon">✔</span>
                 <span>Secure and private processing</span>
             </div>
         </div>
@@ -396,8 +396,8 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    localStorage.setItem("last_job_id", data.job_id);
-                    localStorage.setItem("processingFile", data.filename);
+                    sessionStorage.setItem("last_job_id", data.job_id);
+                    sessionStorage.setItem("processingFile", data.filename);
 
                     window.location.href = "/processing";
                 } else {
