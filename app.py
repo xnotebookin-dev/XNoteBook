@@ -3,7 +3,7 @@ XNoteBook - OCR Document Converter Web Application
 Production-ready async architecture with proper job queue
 """
 
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 import os
 import sqlite3
@@ -923,6 +923,10 @@ def download_file(job_id):
         traceback.print_exc()
         return "Download failed", 500
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 @app.route('/analytics')
 def analytics():
