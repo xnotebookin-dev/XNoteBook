@@ -866,6 +866,13 @@ def sitemap():
         'priority': '0.5'
     })
 
+    pages.append({
+        'loc': 'https://xnotebook.in/about',
+        'lastmod': datetime.now().strftime('%Y-%m-%d'),
+        'changefreq': 'daily',
+        'priority': '0.5'
+    })
+
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
 
@@ -982,6 +989,11 @@ def analytics():
         print(f"Analytics error: {e}")
         traceback.print_exc()
         return f"Error loading analytics: {e}", 500
+
+@app.route('/about')
+def about():
+    """About the app"""
+    return render_template('about.html')
 
 
 # ... (rest of your app.py code above remains unchanged) ...

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XNoteBook - Document Intelligence & OCR Articles</title>
+    <meta name="description" content="Learn about Document Intelligence, OCR technology, and how XNoteBook transforms unstructured documents into actionable knowledge." />
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="../static/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="../static/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../static/apple-touch-icon.png" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #4caf50;
+            --light-green: #e8f5e9;
+            --border-green: #a5d6a7;
+            --text-dark: #2e3d2f;
+            --accent-blue: #2196f3;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--light-green);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text-dark);
+        }
+
+        .header {
+            background: #ffffff;
+            padding: 30px 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 32px;
+            color: var(--text-dark);
+        }
+
+        .header p {
+            margin: 0;
+            font-size: 16px;
+            color: #666;
+        }
+
+        .main-container {
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            gap: 30px;
+            padding: 30px 20px;
+        }
+
+        .content-area {
+            flex: 1;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            min-height: 600px;
+        }
+
+        .content-area h2 {
+            margin: 0 0 10px 0;
+            font-size: 32px;
+            color: var(--text-dark);
+            line-height: 1.3;
+        }
+
+        .content-area h3 {
+            font-size: 22px;
+            color: var(--text-dark);
+            margin: 35px 0 15px 0;
+            padding-top: 10px;
+        }
+
+        .content-area p {
+            font-size: 16px;
+            line-height: 1.8;
+            color: #555;
+            margin: 0 0 20px 0;
+        }
+
+        .content-area ul {
+            margin: 15px 0 20px 0;
+            padding-left: 25px;
+        }
+
+        .content-area li {
+            margin-bottom: 10px;
+            line-height: 1.7;
+            color: #555;
+        }
+
+        .sidebar {
+            width: 320px;
+            flex-shrink: 0;
+        }
+
+        .sidebar-sticky {
+            position: sticky;
+            top: 110px;
+        }
+
+        .search-panel {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+
+        .search-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .search-box {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 40px 12px 15px;
+            border: 2px solid var(--border-green);
+            border-radius: 8px;
+            font-size: 15px;
+            background: #fafafa;
+            transition: all 0.3s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--primary-green);
+            background: #ffffff;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.15);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 18px;
+            color: var(--primary-green);
+        }
+
+        .articles-panel {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+
+        .article-list-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin: 0 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--light-green);
+        }
+
+        .article-links {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .article-links li {
+            margin-bottom: 12px;
+        }
+
+        .article-links a {
+            display: block;
+            color: #555;
+            text-decoration: none;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.4;
+            transition: all 0.2s ease;
+        }
+
+        .article-links a:hover:not(.disabled) {
+            background: var(--light-green);
+            color: var(--primary-green);
+            transform: translateX(4px);
+        }
+
+        .article-links a.active {
+            background: var(--light-green);
+            color: var(--primary-green);
+            font-weight: 600;
+        }
+
+        .highlight {
+            background: linear-gradient(120deg, rgba(33, 150, 243, 0.15) 0%, rgba(76, 175, 80, 0.15) 100%);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .intro-text {
+            font-size: 17px;
+            color: #666;
+            font-style: italic;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--light-green);
+            border-left: 4px solid var(--primary-green);
+            border-radius: 6px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+            font-size: 16px;
+        }
+
+        .search-results-info {
+            font-size: 13px;
+            color: #666;
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: var(--light-green);
+            border-radius: 6px;
+        }
+
+        @media (max-width: 968px) {
+            .main-container {
+                flex-direction: column-reverse;
+            }
+
+            .sidebar {
+                width: 100%;
+            }
+
+            .sidebar-sticky {
+                position: relative;
+                top: 0;
+            }
+
+            .content-area {
+                padding: 25px;
+            }
+
+            .content-area h2 {
+                font-size: 26px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 26px;
+            }
+
+            .content-area {
+                padding: 20px;
+            }
+
+            .content-area h2 {
+                font-size: 24px;
+            }
+
+            .content-area h3 {
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>XNoteBook.in</h1>
+    </div>
+
+    <div class="main-container">
+        <main class="content-area" id="contentArea">
+            <article id="document-intelligence">
+                <h2>Understanding Document Intelligence</h2>
+                
+                <img src="../static/document-intelligence.png" alt="Document Intelligence Workflow" style="width: 100%; max-width: 800px; height: auto; border-radius: 8px; margin: 20px 0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);" />
+                
+                <p class="intro-text">Most of the world's information is stored in documents—PDFs, scanned images, handwritten notes, reports, contracts, and forms. While these documents contain valuable knowledge, much of it is locked in formats that are not searchable, not editable, and not structured for analysis. Simply storing documents digitally does not make the information inside them usable.</p>
+
+                <p>This is where the concept of <span class="highlight">Document Intelligence</span> becomes important.</p>
+
+                <h3>What Is Document Intelligence?</h3>
+
+                <p>Document Intelligence is the process of extracting meaningful information from documents by filtering out irrelevant or redundant content and retaining only what is contextually useful. The extracted information is then processed and presented in a format that best suits the user's needs.</p>
+
+                <p>This idea is not new. Similar concepts have existed for decades in areas such as signal processing, where useful signals are separated from noise. What has changed is the ability to apply this approach effectively to documents—enabled by advances in OCR and Gen AI.</p>
+
+                <h3>Information Extraction Using OCR</h3>
+
+                <p>Most real-world documents are unstructured. They are not stored as clean tables or databases, but as scanned images or text-heavy files. For a computer, this information is not immediately readable.</p>
+
+                <p>Optical Character Recognition (OCR) solves this initial problem by converting images and scanned documents into machine-readable text. Traditional OCR focused mainly on character recognition. Modern OCR systems, enhanced by Gen AI, can also understand layout, structure, and context.</p>
+
+                <p>This allows documents to be converted into:</p>
+
+                <ul>
+                    <li>Searchable PDFs</li>
+                    <li>Editable PDFs</li>
+                    <li>Structured digital text suitable for further processing</li>
+                </ul>
+
+                <h3>Information Processing with Gen AI</h3>
+
+                <p>Once text is extracted, the next challenge is relevance. Documents often contain more information than what is required for a specific task or question.</p>
+
+                <p>Gen AI-based information processing helps identify what matters by understanding context, intent, and relationships within the document. Instead of returning large blocks of text, the system can isolate relevant sections, generate summaries, or answer specific questions while retaining necessary context.</p>
+
+                <p>This step is critical for reducing cognitive load and improving efficiency when working with large or complex documents.</p>
+
+                <h3>Information Presentation</h3>
+
+                <p>Different users prefer different ways of consuming information. Some prefer short summaries, others want structured points, and some benefit from visual representations.</p>
+
+                <p>Information presentation focuses on delivering processed content in the most suitable format—making insights easier to interpret and use. This final step ensures that extracted intelligence is not only accurate, but also accessible.</p>
+
+                <h3>Document Intelligence in Practice</h3>
+
+                <p>XNoteBook.in applies these principles by combining OCR, Gen AI, and task-specific language models to extract, process, and present information from documents. By using specialized models rather than a single generic system, document understanding can be achieved with higher accuracy and lower computational overhead.</p>
+
+                <h3>Why Document Intelligence Matters</h3>
+
+                <p>As the volume of documents continues to grow, the ability to quickly understand and use the information within them becomes increasingly important. Document Intelligence helps bridge the gap between unstructured documents and actionable knowledge—making information easier to search, edit, analyze, and understand.</p>
+
+                <p>By turning static files into searchable and editable PDFs, and by applying Gen AI for contextual understanding, Document Intelligence represents a practical step toward more intelligent information management.</p>
+            </article>
+        </main>
+
+        <aside class="sidebar">
+            <div class="sidebar-sticky">
+                <div class="search-panel">
+                    <h3 class="search-title">🔍 Search Articles</h3>
+                    <div class="search-box">
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            placeholder="Type to search..." 
+                            autocomplete="off"
+                        />
+                        <span class="search-icon">→</span>
+                    </div>
+                    <div id="searchInfo" class="search-results-info" style="display: none;"></div>
+                </div>
+
+                <div class="articles-panel">
+                    <h3 class="article-list-title">📚 Articles</h3>
+                    <ul class="article-links" id="articleLinks">
+                        <li><a href="./about.html" class="active">Understanding Document Intelligence</a></li>
+                        <li><a href="./articles/ocr-technology.html">OCR Technology Guide (Coming Soon)</a></li>
+                        <li><a href="./articles/gen-ai-processing.html">Gen AI in Document Processing (Coming Soon)</a></li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const contentArea = document.getElementById('contentArea');
+        const searchInfo = document.getElementById('searchInfo');
+        const articleLinks = document.querySelectorAll('.article-links a');
+        
+        let originalContent = contentArea.innerHTML;
+
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            
+            if (query === '') {
+                contentArea.innerHTML = originalContent;
+                searchInfo.style.display = 'none';
+                return;
+            }
+
+            const article = contentArea.querySelector('#document-intelligence');
+            const allText = article.textContent.toLowerCase();
+            
+            if (allText.includes(query)) {
+                const sections = article.querySelectorAll('h2, h3, p, li');
+                let matchCount = 0;
+
+                sections.forEach(section => {
+                    const text = section.textContent.toLowerCase();
+                    if (text.includes(query)) {
+                        section.style.display = 'block';
+                        matchCount++;
+                    } else {
+                        section.style.display = 'none';
+                    }
+                });
+
+                searchInfo.style.display = 'block';
+                searchInfo.textContent = `Found ${matchCount} matching sections`;
+
+                if (matchCount === 0) {
+                    contentArea.innerHTML = '<div class="no-results"><p>No matching content found for "' + query + '"</p></div>';
+                    searchInfo.style.display = 'none';
+                }
+            } else {
+                contentArea.innerHTML = '<div class="no-results"><p>No matching content found for "' + query + '"</p></div>';
+                searchInfo.style.display = 'none';
+            }
+        });
+
+        // Update active state based on current page
+        const currentPage = window.location.pathname;
+        articleLinks.forEach(link => {
+            const linkPath = new URL(link.href).pathname;
+            if (currentPage.endsWith(linkPath) || (currentPage.endsWith('/') && linkPath.includes('about.html'))) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

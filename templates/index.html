@@ -236,6 +236,49 @@
             color: var(--primary-green);
             font-size: 20px;
         }
+
+        .about-container {
+           display: flex;
+           justify-content: center;
+           margin-top: 30px;
+           padding-bottom: 10px;
+        }
+
+        .about-link {
+           text-decoration: none; /* Removes default underline */
+           color: inherit;
+           transition: transform 0.2s ease;
+        }
+
+        .about-box {
+           padding: 8px 20px;
+           border: 1px solid var(--border-green);
+           border-radius: 20px;
+           background-color: #ffffff;
+           transition: all 0.3s ease;
+           cursor: pointer;
+        }
+
+        .about-box h6 {
+           margin: 0;
+           font-size: 14px;
+           color: var(--text-dark);
+           font-weight: 500;
+        }
+
+        .about-link:hover .about-box {
+            background-color: var(--primary-green);
+            border-color: var(--primary-green);
+            box-shadow: 0 4px 8px rgba(76, 175, 80, 0.2);
+        }
+
+       .about-link:hover .about-box h6 {
+            color: #ffffff;
+       }
+
+       .about-link:active {
+           transform: scale(0.95);
+       }
     </style>
 </head>
 <body>
@@ -272,6 +315,14 @@
                 <span>Secure and private processing</span>
             </div>
         </div>
+
+        <div class="about-container">
+    <a href="{{ url_for('about') }}" class="about-link">
+        <div class="about-box">
+             <h6>About XNoteBook</h6>
+        </div>
+    </a>
+      </div>
     </div>
 
     <!-- Structured Data (Schema.org) for Search Engines -->

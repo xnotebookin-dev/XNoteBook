@@ -1,6 +1,7 @@
 # Allow all search engines to crawl everything
 User-agent: *
 Allow: /
+Allow: /about/
 
 # Disallow admin and processing endpoints
 Disallow: /admin/
