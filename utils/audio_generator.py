@@ -1,5 +1,3 @@
-import uuid
-
 import edge_tts
 from IPython.display import Audio
 import asyncio

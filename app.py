@@ -30,6 +30,12 @@ import cv2
 import fitz
 import numpy as np
 
+# Import TTS utilities
+from utils.text_extractor import extract_text_from_file, clean_text_for_tts_advanced
+from utils.audio_generator import add_smart_pauses, edge_tts_speak, generate_chunks_parallel, combine_audio_files
+import asyncio
+
+
 # ============================================
 # TESSERACT PATH CONFIGURATION
 # ============================================
@@ -54,6 +60,10 @@ app.config.from_object(config['development'])
 # Create required directories
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
+
+# Create audio output directory for TTS
+AUDIO_OUTPUT_FOLDER = os.path.join(app.config['PROCESSED_FOLDER'], 'audio')
+os.makedirs(AUDIO_OUTPUT_FOLDER, exist_ok=True)
 
 # ============================================
 # JOB QUEUE SYSTEM - PRODUCTION READY
@@ -86,22 +96,33 @@ class JobQueue:
                     break
 
                 job_id = job['job_id']
+                job_type = job.get('job_type', 'ocr')  # Default to OCR for backward compatibility
 
                 # Mark job as active
                 with self.lock:
                     self.active_jobs[job_id] = {
                         'started_at': datetime.now(),
-                        'thread_name': threading.current_thread().name
+                        'thread_name': threading.current_thread().name,
+                        'job_type': job_type
                     }
 
-                print(f"[{threading.current_thread().name}] Starting job: {job_id}")
+                print(f"[{threading.current_thread().name}] Starting {job_type} job: {job_id}")
 
-                # Process the job
-                process_document(
-                    job['input_path'],
-                    job['output_path'],
-                    job_id
-                )
+                # Process based on job type
+                if job_type == 'tts':
+                    process_tts_job(
+                        job['job_id'],
+                        job.get('text'),
+                        job.get('file_path'),
+                        job.get('voice', 'en-US-AriaNeural')
+                    )
+                else:
+                    # Original OCR processing
+                    process_document(
+                        job['input_path'],
+                        job['output_path'],
+                        job_id
+                    )
 
                 # Remove from active jobs
                 with self.lock:
@@ -113,19 +134,28 @@ class JobQueue:
                 print(f"Worker error: {e}")
                 traceback.print_exc()
 
-    def add_job(self, job_id, input_path, output_path):
-        """Add a job to the queue"""
+    def add_job(self, job_id, input_path=None, output_path=None, job_type='ocr', **kwargs):
+        """Add a job to the queue - supports both OCR and TTS jobs"""
         job = {
             'job_id': job_id,
-            'input_path': input_path,
-            'output_path': output_path,
+            'job_type': job_type,
             'queued_at': datetime.now()
         }
+
+        # Add OCR-specific fields
+        if input_path:
+            job['input_path'] = input_path
+        if output_path:
+            job['output_path'] = output_path
+
+        # Add any additional kwargs (for TTS: text, file_path, voice)
+        job.update(kwargs)
+
         self.queue.put(job)
 
         # Get queue position
         queue_position = self.queue.qsize()
-        print(f"📋 Job {job_id} added to queue (position: {queue_position})")
+        print(f"📋 {job_type.upper()} Job {job_id} added to queue (position: {queue_position})")
         return queue_position
 
     def get_queue_info(self):
@@ -251,6 +281,31 @@ def init_database():
 
     except Exception as e:
         print(f"⚠️ Migration check failed: {e}")
+
+    # Create TTS jobs table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tts_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT UNIQUE NOT NULL,
+            source_type TEXT NOT NULL,
+            source_filename TEXT,
+            source_file_size INTEGER,
+            voice_name TEXT DEFAULT 'en-US-AriaNeural',
+            text_length INTEGER,
+            ip_address TEXT,
+            status TEXT DEFAULT 'queued',
+            queue_position INTEGER,
+            progress_percent INTEGER DEFAULT 0,
+            current_step TEXT,
+            error_message TEXT,
+            output_file_path TEXT,
+            output_file_size INTEGER,
+            upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            processing_started_timestamp DATETIME,
+            processed_timestamp DATETIME,
+            processing_time REAL
+        )
+    ''')
 
     conn.commit()
     conn.close()
@@ -393,6 +448,16 @@ def cleanup_old_files(hours=24):
                     os.remove(file_path)
                     deleted_count += 1
                     print(f"🗑️ Deleted old processed file: {filename}")
+
+        # Clean audio folder (TTS outputs)
+        if os.path.exists(AUDIO_OUTPUT_FOLDER):
+            for filename in os.listdir(AUDIO_OUTPUT_FOLDER):
+                file_path = os.path.join(AUDIO_OUTPUT_FOLDER, filename)
+                if os.path.isfile(file_path):
+                    if os.path.getmtime(file_path) < cutoff_time:
+                        os.remove(file_path)
+                        deleted_count += 1
+                        print(f"🗑️ Deleted old audio file: {filename}")
 
         print(f"✅ Cleanup complete: {deleted_count} files deleted")
         return deleted_count
@@ -626,13 +691,170 @@ def process_document(input_path, output_pdf, job_id):
 
 
 # ============================================
+# TTS JOB PROCESSOR
+# ============================================
+
+def process_tts_job(job_id, text=None, file_path=None, voice='en-US-AriaNeural'):
+    """
+    Process text-to-speech job
+    Handles both direct text and file input
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Update status to processing
+        cursor.execute('''
+            UPDATE tts_jobs 
+            SET status = 'processing', 
+                processing_started_timestamp = ?,
+                current_step = 'Starting TTS processing'
+            WHERE job_id = ?
+        ''', (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), job_id))
+        conn.commit()
+
+        # Step 1: Extract text if file provided
+        if file_path and os.path.exists(file_path):
+            cursor.execute('''
+                UPDATE tts_jobs 
+                SET current_step = 'Extracting text from file', 
+                    progress_percent = 10
+                WHERE job_id = ?
+            ''', (job_id,))
+            conn.commit()
+
+            text = extract_text_from_file(file_path)
+            print(f"Extracted {len(text)} characters from file")
+
+        if not text or not text.strip():
+            raise ValueError("No text to convert")
+
+        # Step 2: Clean text for TTS
+        cursor.execute('''
+            UPDATE tts_jobs 
+            SET current_step = 'Cleaning and preparing text', 
+                progress_percent = 30
+            WHERE job_id = ?
+        ''', (job_id,))
+        conn.commit()
+
+        cleaned_text = clean_text_for_tts_advanced(
+            text,
+            remove_citations=True,
+            expand_abbreviations=True,
+            add_pauses=True
+        )
+        print(f"Cleaned text: {len(cleaned_text)} characters")
+
+        # Step 3: Add smart pauses
+        cursor.execute('''
+            UPDATE tts_jobs 
+            SET current_step = 'Adding natural pauses', 
+                progress_percent = 50
+            WHERE job_id = ?
+        ''', (job_id,))
+        conn.commit()
+
+        enhanced_text = add_smart_pauses(cleaned_text)
+        print(f"Enhanced text with pauses: {len(enhanced_text)} characters")
+
+        # Step 4: Generate audio
+        cursor.execute('''
+            UPDATE tts_jobs 
+            SET current_step = 'Generating audio', 
+                progress_percent = 70
+            WHERE job_id = ?
+        ''', (job_id,))
+        conn.commit()
+
+        # Save audio file
+        output_filename = f"{job_id}_audio.mp3"
+        output_path = os.path.join(AUDIO_OUTPUT_FOLDER, output_filename)
+
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            if len(enhanced_text) <= 5000:
+                # Short text - direct generation
+                loop.run_until_complete(edge_tts_speak(enhanced_text, voice, output_path))
+            else:
+                # Long text - chunked generation
+                chunk_files = loop.run_until_complete(
+                    generate_chunks_parallel(enhanced_text, voice, max_chunk_size=5000)
+                )
+                combine_audio_files(chunk_files, output_path)
+        finally:
+            loop.close()
+
+        print(f"Audio saved to {output_path}")
+
+        # Calculate file size
+        file_size = os.path.getsize(output_path)
+
+        # Get processing start time for duration calculation
+        cursor.execute('SELECT processing_started_timestamp FROM tts_jobs WHERE job_id = ?', (job_id,))
+        start_time_str = cursor.fetchone()[0]
+        start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
+        processing_time = (datetime.now() - start_time).total_seconds()
+
+        # Step 5: Complete
+        cursor.execute('''
+            UPDATE tts_jobs 
+            SET status = 'completed',
+                current_step = 'Completed',
+                progress_percent = 100,
+                processed_timestamp = ?,
+                processing_time = ?,
+                output_file_path = ?,
+                output_file_size = ?
+            WHERE job_id = ?
+        ''', (
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            processing_time,
+            output_path,
+            file_size,
+            job_id
+        ))
+        conn.commit()
+
+        print(f"✅ TTS job {job_id} completed successfully")
+
+    except Exception as e:
+        error_message = str(e)
+        print(f"❌ TTS job {job_id} failed: {error_message}")
+        traceback.print_exc()
+
+        cursor.execute('''
+            UPDATE tts_jobs 
+            SET status = 'failed',
+                error_message = ?,
+                processed_timestamp = ?
+            WHERE job_id = ?
+        ''', (error_message, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), job_id))
+        conn.commit()
+
+    finally:
+        conn.close()
+
+
+# ============================================
 # HELPER FUNCTIONS
 # ============================================
+
+# TTS file extensions
+TTS_FILE_EXTENSIONS = {'pdf', 'txt', 'doc', 'docx'}
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+def allowed_tts_file(filename):
+    """Check if file extension is allowed for TTS"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in TTS_FILE_EXTENSIONS
 
 
 # ============================================
@@ -989,6 +1211,248 @@ def analytics():
         print(f"Analytics error: {e}")
         traceback.print_exc()
         return f"Error loading analytics: {e}", 500
+
+# ============================================
+# TEXT-TO-SPEECH API ENDPOINTS
+# ============================================
+
+@app.route('/api/tts/convert', methods=['POST'])
+def convert_to_speech():
+    """
+    API endpoint to convert text or file to speech
+
+    Accepts:
+    - Form data with 'text' field (direct text input)
+    - Form data with 'file' field (PDF, TXT, DOC, DOCX)
+    - Optional 'voice' field (default: en-US-AriaNeural)
+
+    Returns:
+    - JSON with job_id for status tracking
+    """
+    try:
+        # Get voice preference (optional)
+        voice = request.form.get('voice', 'en-US-AriaNeural')
+
+        # Validate voice name (basic validation)
+        if not voice or not voice.strip():
+            voice = 'en-US-AriaNeural'
+
+        # Check if text or file is provided
+        text_input = request.form.get('text', '').strip()
+        file_input = request.files.get('file')
+
+        if not text_input and not file_input:
+            return jsonify({
+                'error': 'Either text or file must be provided'
+            }), 400
+
+        # Prioritize file over text if both provided
+        source_type = 'file' if file_input else 'text'
+
+        # Generate unique job ID
+        job_id = str(uuid.uuid4())
+
+        # Get client info
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ip and ',' in ip:
+            ip = ip.split(',')[0].strip()
+
+        # Initialize variables
+        file_path = None
+        filename = None
+        file_size = None
+        text_length = len(text_input) if text_input else 0
+
+        # Handle file upload
+        if file_input:
+            # Validate file extension
+            if not allowed_tts_file(file_input.filename):
+                return jsonify({
+                    'error': f'Invalid file type. Allowed: {", ".join(TTS_FILE_EXTENSIONS)}'
+                }), 400
+
+            filename = secure_filename(file_input.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_{filename}")
+            file_input.save(file_path)
+            file_size = os.path.getsize(file_path)
+
+            print(f"📄 File uploaded: {filename} ({file_size} bytes)")
+
+        # Save job to database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        queue_position = job_queue.get_queue_info()['queue_size'] + 1
+
+        cursor.execute('''
+            INSERT INTO tts_jobs (
+                job_id, source_type, source_filename, source_file_size,
+                voice_name, text_length, ip_address, status, queue_position
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)
+        ''', (
+            job_id, source_type, filename, file_size,
+            voice, text_length, ip, queue_position
+        ))
+        conn.commit()
+        conn.close()
+
+        # Add job to queue
+        job_queue.add_job(
+            job_id=job_id,
+            job_type='tts',
+            text=text_input if text_input else None,
+            file_path=file_path,
+            voice=voice
+        )
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'status': 'queued',
+            'queue_position': queue_position,
+            'message': 'TTS job submitted successfully'
+        }), 202
+
+    except Exception as e:
+        print(f"TTS API error: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to process request: {str(e)}'
+        }), 500
+
+
+@app.route('/api/tts/status/<job_id>')
+def tts_status(job_id):
+    """
+    Check status of TTS job
+
+    Returns:
+    - Job status, progress, and download link when completed
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tts_jobs WHERE job_id = ?', (job_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            row = dict(result)
+
+            response = {
+                'job_id': job_id,
+                'status': row['status'],
+                'progress_percent': row['progress_percent'] or 0,
+                'current_step': row['current_step'],
+                'queue_position': row['queue_position'],
+                'source_type': row['source_type'],
+                'voice_name': row['voice_name']
+            }
+
+            # Add error message if failed
+            if row['status'] == 'failed':
+                response['error_message'] = row['error_message']
+
+            # Add download link if completed
+            if row['status'] == 'completed' and row['output_file_path']:
+                response['download_url'] = url_for('download_tts_audio', job_id=job_id, _external=True)
+                response['file_size'] = row['output_file_size']
+                response['processing_time'] = row['processing_time']
+
+            # Calculate estimated time remaining
+            if row['status'] == 'queued':
+                queue_info = job_queue.get_queue_info()
+                response['queue_info'] = queue_info
+                # Estimate 2 minutes per job in queue
+                response['estimated_wait_seconds'] = queue_info['queue_size'] * 120
+
+            elif row['status'] == 'processing' and row['processing_started_timestamp']:
+                start_time = datetime.strptime(row['processing_started_timestamp'], '%Y-%m-%d %H:%M:%S')
+                elapsed = (datetime.now() - start_time).total_seconds()
+                progress = row['progress_percent'] or 1
+
+                if progress > 0:
+                    estimated_total = elapsed / (progress / 100)
+                    estimated_remaining = max(0, estimated_total - elapsed)
+                    response['estimated_seconds_remaining'] = int(estimated_remaining)
+                    response['elapsed_seconds'] = int(elapsed)
+
+            return jsonify(response)
+        else:
+            return jsonify({'error': 'Job not found'}), 404
+
+    except Exception as e:
+        print(f"TTS status check error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tts/download/<job_id>')
+def download_tts_audio(job_id):
+    """
+    Download generated audio file
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT output_file_path, source_filename, status FROM tts_jobs WHERE job_id = ?', (job_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            return jsonify({'error': 'Job not found'}), 404
+
+        row = dict(result)
+
+        if row['status'] != 'completed':
+            return jsonify({'error': f'Audio not ready. Current status: {row["status"]}'}), 400
+
+        output_path = row['output_file_path']
+
+        if not output_path or not os.path.exists(output_path):
+            return jsonify({'error': 'Audio file not found'}), 404
+
+        # Generate download filename
+        base_name = os.path.splitext(row['source_filename'])[0] if row['source_filename'] else 'audio'
+        download_name = f"{base_name}_audio.mp3"
+
+        return send_file(
+            output_path,
+            mimetype='audio/mpeg',
+            as_attachment=True,
+            download_name=download_name
+        )
+
+    except Exception as e:
+        print(f"TTS download error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': 'Download failed'}), 500
+
+
+@app.route('/api/tts/voices')
+def list_voices():
+    """
+    List available TTS voices
+    """
+    voices = {
+        'female': [
+            {'name': 'en-US-AriaNeural', 'description': 'Friendly US English'},
+            {'name': 'en-US-JennyNeural', 'description': 'Professional US English'},
+            {'name': 'en-GB-SoniaNeural', 'description': 'British English'},
+            {'name': 'en-AU-NatashaNeural', 'description': 'Australian English'},
+            {'name': 'en-IN-NeerjaNeural', 'description': 'Indian English'}
+        ],
+        'male': [
+            {'name': 'en-US-GuyNeural', 'description': 'Deep US English'},
+            {'name': 'en-US-ChristopherNeural', 'description': 'Warm US English'},
+            {'name': 'en-GB-RyanNeural', 'description': 'British English'},
+            {'name': 'en-AU-WilliamNeural', 'description': 'Australian English'},
+            {'name': 'en-IN-PrabhatNeural', 'description': 'Indian English'}
+        ]
+    }
+
+    return jsonify(voices)
+
 
 @app.route('/about')
 def about():

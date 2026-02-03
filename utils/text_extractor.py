@@ -3,10 +3,7 @@ from docx import Document
 import subprocess
 import os
 import re
-import edge_tts
-import nest_asyncio
-import asyncio
-from pydub import AudioSegment
+
 
 def extract_pdf_content(pdf_path):
     """
@@ -41,20 +38,7 @@ def extract_text_from_word(file_path):
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == '.doc':
-        try:
-            file_dir = os.path.dirname(file_path) or '.'
-            subprocess.run(
-                ['libreoffice', '--headless', '--convert-to', 'docx', '--outdir', file_dir, file_path],
-                check=True,
-                capture_output=True
-            )
-            base_name = os.path.splitext(os.path.basename(file_path))[0]
-            file_path = os.path.join(file_dir, f"{base_name}.docx")
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to convert .doc to .docx: {e}")
-        except FileNotFoundError:
-            raise Exception("LibreOffice not found. Please install LibreOffice to convert .doc files.")
-
+        raise ValueError("Legacy .doc files are not supported. Please save as .docx first.")
     elif ext != '.docx':
         raise ValueError(f"Unsupported file format: {ext}")
 
