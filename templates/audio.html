@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XNoteBook - AI Audio Dashboard</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        :root {
+            --primary-green: #4caf50;
+            --light-green: #e8f5e9;
+            --border-green: #a5d6a7;
+            --text-dark: #2e3d2f;
+            --hover-green: #43a047;
+        }
+
+        body {
+            margin: 0; padding: 0; background-color: var(--light-green);
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        .top-spacer {
+            width: 100%;
+            padding: 60px 0 40px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header-main h1 {
+            color: var(--text-dark);
+            font-size: 32px;
+            margin: 0;
+        }
+
+        /* --- Two Column Dashboard Grid --- */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            width: 95%;
+            max-width: 1100px; /* Adjusted for two columns */
+            margin-bottom: 80px;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 35px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            min-height: 700px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card h2 {
+            color: var(--text-dark);
+            font-size: 20px;
+            margin: 0 0 20px 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        /* Input Column Styles */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { flex: 1; padding: 12px; border: 1px solid #eee; background: #fafafa; cursor: pointer; border-radius: 8px; font-weight: 600; color: #888; }
+        .tab-btn.active { background: var(--primary-green); color: white; border-color: var(--primary-green); }
+
+        .textarea-wrapper { position: relative; flex-grow: 1; display: flex; flex-direction: column; }
+        textarea { width: 100%; flex-grow: 1; padding: 15px; border: 2px solid var(--border-green); border-radius: 10px; resize: none; outline: none; background: #fafafa; font-family: inherit; font-size: 15px; }
+        .char-counter { text-align: right; font-size: 12px; color: #888; margin-top: 5px; }
+
+        .upload-box { border: 2px dashed var(--border-green); border-radius: 10px; padding: 40px 20px; text-align: center; cursor: pointer; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; background: #fafafa; }
+
+        .action-btn { width: 100%; padding: 16px; border: none; border-radius: 8px; background: var(--primary-green); color: white; font-weight: 600; font-size: 16px; cursor: pointer; margin-top: 20px; transition: 0.3s; }
+        .action-btn:hover { background: var(--hover-green); }
+
+        /* Output/Status Column Styles */
+        .output-content { flex-grow: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; }
+
+        .spinner { width: 65px; height: 65px; border: 6px solid #f3f3f3; border-top: 6px solid var(--primary-green); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .percent-display { font-size: 42px; font-weight: 700; color: var(--primary-green); margin-bottom: 10px; display: none; }
+        .progress-bar-wrap { width: 100%; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; margin-bottom: 20px; display: none; }
+        .progress-fill { height: 100%; width: 0%; background: var(--primary-green); transition: width 0.4s ease-out; }
+
+        .audio-container { display: none; animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        audio { width: 100%; margin: 30px 0; }
+        .dl-btn { display: block; background: var(--primary-green); color: white; text-decoration: none; padding: 14px; border-radius: 8px; font-weight: 600; text-align: center; transition: 0.3s; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2); }
+        .dl-btn:hover { background: var(--hover-green); }
+
+        /* Footer */
+        .footer-area { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 40px; margin-bottom: 80px; }
+        .promo-box { background: white; border: 1px solid var(--border-green); border-radius: 12px; padding: 25px; display: flex; align-items: center; justify-content: space-between; }
+        .promo-content { display: flex; align-items: center; gap: 15px; }
+        .promo-btn { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border: 2px solid var(--primary-green); color: var(--primary-green); text-decoration: none; border-radius: 8px; font-weight: 700; transition: 0.2s; }
+        .promo-btn:hover { background: var(--primary-green); color: white; }
+
+        .about-link { text-decoration: none; align-self: center; }
+        .about-box { padding: 12px 35px; border: 1px solid var(--border-green); border-radius: 30px; background: white; transition: 0.3s; cursor: pointer; }
+        .about-box h6 { margin: 0; color: var(--text-dark); font-size: 14px; font-weight: 500; }
+        .about-link:hover .about-box { background: var(--primary-green); border-color: var(--primary-green); }
+        .about-link:hover h6 { color: white; }
+
+        .hidden { display: none !important; }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 800px) {
+        .dashboard {
+        grid-template-columns: 1fr; /* Stacks the cards vertically */
+        width: 98%; /* Uses more screen width on small devices */
+        gap: 15px;  /* Reduces gap to save space */
+        }
+
+        .card {
+        min-height: auto; /* Allow cards to shrink/grow based on content */
+        padding: 20px;    /* Smaller padding for smaller screens */
+        }
+
+        .header-main h1 {
+        font-size: 24px;  /* Scales down the title */
+         }
+
+        .promo-box {
+        flex-direction: column; /* Stacks promo text and button */
+        text-align: center;
+        gap: 15px;
+        }
+    }
+    </style>
+</head>
+<body>
+
+<div class="top-spacer">
+    <div class="header-main">
+        <h1>XNoteBook Audio</h1>
+    </div>
+</div>
+
+<div class="dashboard">
+    <div class="card">
+        <h2>Synthesise Input</h2>
+        <div class="tabs">
+            <button class="tab-btn active" id="btn-text" onclick="toggleInput('text')">Text</button>
+            <button class="tab-btn" id="btn-file" onclick="toggleInput('file')">Document</button>
+        </div>
+
+        <div id="box-text" class="textarea-wrapper">
+            <textarea id="textInput" placeholder="Paste your text here..."></textarea>
+            <div class="char-counter"><span id="currentChar">0</span> / 5000 characters</div>
+        </div>
+
+        <div id="box-file" class="hidden" style="flex-grow:1; display:flex; flex-direction:column;">
+    <label class="upload-box" id="dropZone">
+        <input type="file" id="fileInput" accept=".pdf,.txt,.docx" style="display:none;" />
+        <span id="uploadIcon" style="font-size: 40px; transition: 0.3s;">📂</span>
+        <strong id="uploadPrompt" style="margin-top:15px; display:block; transition: 0.3s;">Click to Upload</strong>
+        <p id="fileFileName" style="font-size: 14px; color: var(--primary-green); font-weight: 600; margin-top: 10px;"></p>
+        <p id="fileSpecs" style="font-size: 13px; color: #888;">PDF, TXT, or DOCX up to 5MB</p>
+    </label>
+</div>
+
+        <button class="action-btn" id="generateBtn">Generate AI Audio</button>
+    </div>
+
+    <div class="card">
+        <h2>Audio Synthesis Output</h2>
+        <div class="output-content">
+
+            <div id="status-idle">
+                <p style="color: #bbb; font-style: italic;">Provide input to start the engine...</p>
+            </div>
+
+            <div class="spinner" id="spinner"></div>
+            <div id="percentVal" class="percent-display">0%</div>
+            <div class="progress-bar-wrap" id="progWrap">
+                <div class="progress-fill" id="progFill"></div>
+            </div>
+            <h3 id="statusTitle" class="hidden" style="margin: 0; color: var(--text-dark);">Synthesizing...</h3>
+
+            <div class="audio-container" id="resContent">
+                <div style="font-size: 50px; margin-bottom: 20px;">🎵</div>
+                <h3>Your Audio is Ready</h3>
+                <audio id="audioPlayer" controls>
+                    <source id="audioSource" src="" type="audio/mpeg">
+                </audio>
+                <a id="downloadBtn" href="#" class="dl-btn" download>📥 Download MP3</a>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<div class="footer-area">
+    <div class="promo-box">
+        <div class="promo-content">
+            <span style="font-size: 26px;">🔍</span>
+            <div>
+                <strong style="display:block; font-size: 17px;">Try Text Extractor</strong>
+                <span style="font-size: 13px; color: #666;">Extract text from images before generating audio.</span>
+            </div>
+        </div>
+        <a href="/" class="promo-btn">
+            <span>Go to Extractor</span>
+            <span style="font-size: 18px;">➔</span>
+        </a>
+    </div>
+
+    <a href="{{ url_for('about') }}" class="about-link">
+        <div class="about-box">
+             <h6>About XNoteBook</h6>
+        </div>
+    </a>
+</div>
+
+<script>
+    const textInput = document.getElementById('textInput');
+    const charDisplay = document.getElementById('currentChar');
+    let mode = 'text';
+
+    textInput.addEventListener('input', () => {
+        charDisplay.textContent = textInput.value.length;
+    });
+
+    function toggleInput(type) {
+        mode = type;
+        document.getElementById('box-text').classList.toggle('hidden', type !== 'text');
+        document.getElementById('box-file').classList.toggle('hidden', type !== 'file');
+        document.getElementById('btn-text').classList.toggle('active', type === 'text');
+        document.getElementById('btn-file').classList.toggle('active', type === 'file');
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', async () => {
+        // Reset Right Column for Processing
+        document.getElementById('status-idle').classList.add('hidden');
+        document.getElementById('resContent').style.display = 'none';
+        document.getElementById('spinner').style.display = 'block';
+        document.getElementById('percentVal').style.display = 'block';
+        document.getElementById('progWrap').style.display = 'block';
+        document.getElementById('statusTitle').classList.remove('hidden');
+
+        // FormData prep
+        const fd = new FormData();
+        if (mode === 'text') {
+            const t = textInput.value.trim();
+            if (!t) return alert("Input field is empty.");
+            fd.append('text', t);
+        } else {
+            const f = document.getElementById('fileInput').files[0];
+            if (!f) return alert("No file selected.");
+            fd.append('file', f);
+        }
+
+        try {
+            const res = await fetch("/api/tts/convert", { method: "POST", body: fd });
+            const data = await res.json();
+
+            const timer = setInterval(async () => {
+                const sRes = await fetch(`/api/tts/status/${data.job_id}`);
+                const sData = await sRes.json();
+
+                if (sData.status === 'processing' || sData.status === 'completed') {
+                    const pct = sData.progress_percent || 0;
+                    document.getElementById('percentVal').textContent = pct + "%";
+                    document.getElementById('progFill').style.width = pct + "%";
+
+                    if (sData.status === 'completed') {
+                        clearInterval(timer);
+                        showFinal(data.job_id);
+                    }
+                }
+            }, 1500);
+        } catch (e) {
+            alert("Error connecting to server.");
+        }
+    });
+
+    function showFinal(id) {
+        const url = `/api/tts/download/${id}`;
+        document.getElementById('audioSource').src = url;
+        document.getElementById('audioPlayer').load();
+        document.getElementById('downloadBtn').href = url;
+
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('percentVal').style.display = 'none';
+        document.getElementById('progWrap').style.display = 'none';
+        document.getElementById('statusTitle').classList.add('hidden');
+        document.getElementById('resContent').style.display = 'block';
+    }
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    const prompt = document.getElementById('uploadPrompt');
+    const nameDisplay = document.getElementById('fileFileName');
+    const icon = document.getElementById('uploadIcon');
+    const specs = document.getElementById('fileSpecs');
+
+    if (file) {
+        // Update UI to show the file is attached
+        icon.textContent = "📄";
+        prompt.textContent = "File Selected";
+        prompt.style.color = "var(--primary-green)";
+        nameDisplay.textContent = file.name;
+        specs.style.display = "none"; // Hide specs to focus on the filename
+    } else {
+        // Reset if cleared
+        icon.textContent = "📂";
+        prompt.textContent = "Click to Upload";
+        prompt.style.color = "inherit";
+        nameDisplay.textContent = "";
+        specs.style.display = "block";
+    }
+});
+</script>
+</body>
+</html>

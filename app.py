@@ -36,6 +36,8 @@ from utils.audio_generator import add_smart_pauses, edge_tts_speak, generate_chu
 import asyncio
 
 
+from utils import text_extractor, audio_generator
+
 # ============================================
 # TESSERACT PATH CONFIGURATION
 # ============================================
@@ -1458,6 +1460,12 @@ def list_voices():
 def about():
     """About the app"""
     return render_template('about.html')
+
+@app.route('/audio')
+def audio():
+    """About the app"""
+    return render_template('audio.html')
+
 
 
 # ... (rest of your app.py code above remains unchanged) ...

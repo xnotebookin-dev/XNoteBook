@@ -279,6 +279,73 @@
        .about-link:active {
            transform: scale(0.95);
        }
+
+        .audio-promo-container {
+           margin-top: 20px;
+           padding-top: 20px;
+           border-top: 1px solid #e0e0e0;
+        }
+
+        .audio-promo-box {
+           background-color: #f9f9f9;
+           border: 1px solid var(--border-green);
+           border-radius: 10px;
+           padding: 20px;
+           display: flex;
+           flex-direction: column;
+           gap: 15px;
+           align-items: center;
+           text-align: center;
+           transition: transform 0.2s ease;
+        }
+
+       .audio-promo-box:hover {
+           background-color: #ffffff;
+           box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+       }
+
+       .audio-header {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+       }
+
+      .audio-icon {
+          font-size: 32px;
+          background: var(--light-green);
+          padding: 10px;
+          border-radius: 50%;
+     }
+
+    .audio-title-group h3 {
+        margin: 0;
+        font-size: 18px;
+        color: var(--text-dark);
+    }
+
+    .audio-title-group p {
+        margin: 4px 0 0 0;
+        font-size: 13px;
+        color: #666;
+    }
+
+    .audio-btn {
+        display: inline-block;
+        padding: 10px 20px;
+        background-color: #ffffff;
+        color: var(--primary-green);
+        border: 2px solid var(--primary-green);
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.3s ease;
+    }
+
+    .audio-btn:hover {
+        background-color: var(--primary-green);
+        color: #ffffff;
+    }
     </style>
 </head>
 <body>
@@ -315,6 +382,19 @@
                 <span>Secure and private processing</span>
             </div>
         </div>
+
+        <div class="audio-promo-container">
+    <div class="audio-promo-box">
+        <div class="audio-header">
+            <span class="audio-icon">🎙️</span>
+            <div class="audio-title-group">
+                <h3>Try Text to Audio</h3>
+                <p>Convert your documents into realistic AI voices</p>
+            </div>
+        </div>
+        <a href="{{ url_for('audio') }}" class="audio-btn">Go to Audio Converter</a>
+    </div>
+    </div>
 
         <div class="about-container">
     <a href="{{ url_for('about') }}" class="about-link">
