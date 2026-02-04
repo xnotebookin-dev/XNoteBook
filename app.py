@@ -1084,6 +1084,13 @@ def sitemap():
     })
 
     pages.append({
+        'loc': 'https://xnotebook.in/audio',
+        'lastmod': datetime.now().strftime('%Y-%m-%d'),
+        'changefreq': 'weekly',
+        'priority': '1.0'
+    })
+
+    pages.append({
         'loc': 'https://xnotebook.in/analytics',
         'lastmod': datetime.now().strftime('%Y-%m-%d'),
         'changefreq': 'daily',
