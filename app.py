@@ -31,7 +31,7 @@ import fitz
 import numpy as np
 
 # Import TTS utilities
-from utils.text_extractor import extract_text_from_file, clean_text_for_tts_advanced
+from utils.text_extractor import extract_text_from_file, clean_text_for_tts
 from utils.audio_generator import add_smart_pauses, edge_tts_speak, generate_chunks_parallel, combine_audio_files
 import asyncio
 
@@ -740,12 +740,7 @@ def process_tts_job(job_id, text=None, file_path=None, voice='en-US-AriaNeural')
         ''', (job_id,))
         conn.commit()
 
-        cleaned_text = clean_text_for_tts_advanced(
-            text,
-            remove_citations=True,
-            expand_abbreviations=True,
-            add_pauses=True
-        )
+        cleaned_text = clean_text_for_tts(text)
         print(f"Cleaned text: {len(cleaned_text)} characters")
 
         # Step 3: Add smart pauses

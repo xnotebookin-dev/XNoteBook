@@ -41,88 +41,69 @@ def text_to_speech(text, voice='en-US-AriaNeural'):
 
 def add_smart_pauses(text):
     """
-    Generic function to add natural pauses to any text.
-    Uses line breaks which edge-tts interprets as pauses (without speaking them).
-    Works for stories, articles, technical docs, presentations, etc.
+    Stage 2: PAUSING & FLOW
+    Adds structural pauses (newlines, colons) for Edge-TTS.
     """
-    if not text or not text.strip():
-        return text
+    if not text: return ""
 
-    enhanced = text.strip()
+    enhanced = text
 
-    # 1. Preserve existing paragraph breaks (double newlines)
-    # These already indicate major pauses
-    enhanced = re.sub(r'\n\n+', '\n\n', enhanced)
+    # 1. PROTECT DECIMALS & INITIALS
+    # Temporarily hide dots that are NOT sentence endings
+    enhanced = re.sub(r'(\d)\.(\d)', r'\1<DOT>\2', enhanced) # 3.14
+    enhanced = re.sub(r'(?<=\s)([A-Z])\.', r'\1<DOT>', enhanced) # T. Edison
 
-    # 2. Add line break after sentences (period, exclamation, question mark)
-    # This creates natural pauses between sentences
-    enhanced = re.sub(r'([.!?])\s+([A-Z])', r'\1\n\2', enhanced)
+    # 2. SENTENCE SPLITTING
+    # Add a newline after punctuation if followed by a space and capital letter.
+    # This forces the TTS engine to pause breath.
+    enhanced = re.sub(r'([.!?;])\s+([A-Z])', r'\1\n\2', enhanced)
 
-    # 3. Detect section headers/titles (ALL CAPS or starting with #)
-    # Add double line break after them for longer pause
+    # 3. RESTORE DOTS
+    enhanced = enhanced.replace('<DOT>', '.')
+
+    # 4. HEADER & LIST PROCESSING
     lines = enhanced.split('\n')
     processed_lines = []
 
-    for i, line in enumerate(lines):
+    for line in lines:
         stripped = line.strip()
-
         if not stripped:
-            processed_lines.append('')
             continue
 
-        # Check if line is a header
-        is_header = False
+        # A. Detect Headers (Markdown # or All Caps)
+        # Check for Markdown headers (# Header) or capitalized short lines
+        is_header = stripped.startswith('#') or (stripped.isupper() and len(stripped.split()) < 10)
 
-        # Markdown header (starts with #)
-        if stripped.startswith('#'):
-            is_header = True
-            stripped = re.sub(r'^#+\s*', '', stripped)  # Remove # symbols
+        if is_header:
+            # Clean the '#' marker
+            clean_line = stripped.lstrip('#').strip()
+            # Add a colon if missing (Forces TTS to pause/intonate downwards)
+            if clean_line and clean_line[-1] not in '.!:;':
+                clean_line += ':'
 
-        # ALL CAPS header (80%+ uppercase letters)
-        alpha_chars = [c for c in stripped if c.isalpha()]
-        if alpha_chars and not is_header:
-            upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
-            if upper_ratio >= 0.8 and len(stripped.split()) <= 15:
-                is_header = True
+            # Add buffer lines for isolation
+            processed_lines.append("")
+            processed_lines.append(clean_line)
+            processed_lines.append("")
 
-        # CHAPTER/SECTION/PART markers
-        if re.match(r'^(CHAPTER|SECTION|PART|INTRODUCTION|CONCLUSION|SUMMARY|OVERVIEW)\b',
-                   stripped, re.IGNORECASE):
-            is_header = True
+        # B. Detect List Items
+        # Matches "1.", "1)", "-", "*" at start of line
+        elif re.match(r'^(\d+[.)]|\*|-)\s+', stripped):
+            # Ensure list items are on their own line
+            processed_lines.append(stripped)
 
-        # Add the line
-        processed_lines.append(stripped)
+        # C. Standard Text
+        else:
+            processed_lines.append(stripped)
 
-        # Add extra line break after headers (unless it's the last line)
-        if is_header and i < len(lines) - 1:
-            processed_lines.append('')
+    # 5. Final Assembly
+    result = '\n'.join(processed_lines)
 
-    enhanced = '\n'.join(processed_lines)
+    # Remove excessive blank lines created by the header logic
+    result = re.sub(r'\n{3,}', '\n\n', result)
 
-    # 4. Handle lists - add line break before numbered/bulleted items
-    # Matches: "1. Item", "1) Item", "- Item", "* Item", "• Item"
-    enhanced = re.sub(r'\n(\d+[\.\)])\s+', r'\n\n\1 ', enhanced)
-    enhanced = re.sub(r'\n([\-\*•])\s+', r'\n\n\1 ', enhanced)
+    return result.strip()
 
-    # 5. Add line break after colons when followed by list or explanation
-    enhanced = re.sub(r':(\s*)(?=\n)', r':\n', enhanced)
-
-    # 6. Clean up excessive line breaks (max 2 in a row)
-    enhanced = re.sub(r'\n{3,}', '\n\n', enhanced)
-
-    # 7. Ensure proper spacing after punctuation
-    enhanced = re.sub(r'([.!?,;:])\s*([A-Za-z])', r'\1 \2', enhanced)
-
-    # 8. Clean up multiple spaces
-    enhanced = re.sub(r' +', ' ', enhanced)
-
-    # 9. Remove spaces before punctuation
-    enhanced = re.sub(r'\s+([,.!?;:])', r'\1', enhanced)
-
-    # 10. Final cleanup
-    enhanced = enhanced.strip()
-
-    return enhanced
 
 async def generate_chunks_parallel(text, voice_name, max_chunk_size=5000):
     """

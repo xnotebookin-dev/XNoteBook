@@ -1,34 +1,19 @@
-import pdfplumber
 from docx import Document
 import subprocess
 import os
 import re
+import pymupdf4llm
 
 
 def extract_pdf_content(pdf_path):
     """
     Extracts text from PDF, excluding headers and footers (top/bottom 8%).
     """
-    content = ''
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            page_height = page.height
-            header_threshold = page_height * 0.08
-            footer_threshold = page_height * 0.92
-
-            words = page.extract_words()
-
-            filtered_text = []
-            for word in words:
-                word_top = word['top']
-                word_bottom = word['bottom']
-
-                if header_threshold < word_top and word_bottom < footer_threshold:
-                    filtered_text.append(word['text'])
-
-            content += ' '.join(filtered_text) + '\n\n'
-
-    return content.strip()
+    md_text = pymupdf4llm.to_markdown(
+        pdf_path,
+        margins=(0, 70, 0, 50)
+    )
+    return md_text
 
 def extract_text_from_word(file_path):
     """
@@ -76,70 +61,79 @@ def extract_text_from_file(file_path, encoding='utf-8'):
     else:
         raise ValueError(f"Unsupported file format: {ext}")
 
-def clean_text_for_tts_advanced(text,
-                                remove_citations=True,
-                                expand_abbreviations=True,
-                                remove_short_sentences=False,
-                                min_sentence_words=3,
-                                add_pauses=False,
-                                pause_after_headings=True):
+def clean_text_for_tts(text, expand_abbreviations=True):
     """
-    Cleans and prepares text specifically for high-quality TTS synthesis.
+    Stage 1: CLEANING
+    Unwraps PDF text safely.
+    Protects: Code blocks, Lists, and Headers from being merged into one line.
     """
     if not text or not isinstance(text, str):
         return ""
 
-    # Remove URLs and Emails
-    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
-    text = re.sub(r'\S+@\S+', '', text)
+    # 1. Normalize line endings
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
 
-    # Remove brackets content
-    text = re.sub(r'\[.*?\]|\(.*?\)|\{.*?\}', '', text)
+    # --- PROTECTION STEP: HIDE STRUCTURE ---
+    # We replace strict formatting with placeholders so we don't accidentally delete their newlines.
 
-    # Process Headings
-    if pause_after_headings:
-        lines = text.split('\n')
-        processed_lines = []
-        for line in lines:
-            line_s = line.strip()
-            if line_s and line_s.isupper() and len(line_s.split()) >= 2:
-                processed_lines.append(' '.join(line_s) + '...')
-            else:
-                processed_lines.append(line)
-        text = '\n'.join(processed_lines)
+    # A. Protect Code Blocks (``` code ```)
+    # We hide the newlines inside code blocks
+    def protect_code(match):
+        return match.group(0).replace('\n', '<<CODE_NEWLINE>>')
+    text = re.sub(r'```[\s\S]*?```', protect_code, text)
 
-    # Remove Formatting & Code
-    text = re.sub(r'[#*_`~<>]', '', text)
-    text = re.sub(r'```.*?```|`.*?`', '', text, flags=re.DOTALL)
+    # B. Protect List Items and Headers
+    # If a line starts with *, -, #, or 1., we generally want to keep the newline before it.
+    # We look for a newline followed by these characters.
+    text = re.sub(r'\n(?=\s*[-*#]|\s*\d+\.)', '<<LIST_NEWLINE>>', text)
 
-    if remove_citations:
-        text = re.sub(r'\d{4}', '', text)
+    # C. Protect Double Newlines (Paragraph Breaks)
+    text = re.sub(r'\n\s*\n', '<<PARAGRAPH_BREAK>>', text)
 
+    # --- UNWRAP STEP ---
+    # Now it is safe to turn remaining single newlines into spaces
+    text = text.replace('\n', ' ')
+
+    # --- RESTORATION STEP ---
+    text = text.replace('<<PARAGRAPH_BREAK>>', '\n\n')
+    text = text.replace('<<LIST_NEWLINE>>', '\n')
+    text = text.replace('<<CODE_NEWLINE>>', '\n')
+    # -----------------------
+
+    # 2. Fix broken hyphenation ("exam- ple" -> "example")
+    text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', text)
+
+    # 3. Strip Markdown Images and Links
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+
+    # 4. Remove Citations [1]
+    text = re.sub(r'\[\s*(?:\d+|[a-zA-Z]|note|source)\s*[-\d]*\s*\]', '', text, flags=re.IGNORECASE)
+
+    # 5. Handle Tables (Pipes to commas)
+    text = text.replace('|', ',')
+    text = re.sub(r'\n\s*[-:,]+\s*\n', '\n', text)
+
+    # 6. Remove Formatting Wrappers
+    text = re.sub(r'[*_`]{1,3}([^*_`]+)[*_`]{1,3}', r'\1', text)
+
+    # 7. Expand Abbreviations
     if expand_abbreviations:
-        abbreviations = {
-            r'\bDr\.': 'Doctor', r'\bMr\.': 'Mister', r'\bMrs\.': 'Misses',
-            r'\bMs\.': 'Miss', r'\bProf\.': 'Professor', r'\betc\.': 'etcetera',
-            r'\be\.g\.': 'for example', r'\bi\.e\.': 'that is'
-        }
-        for abbr, replacement in abbreviations.items():
-            text = re.sub(abbr, replacement, text, flags=re.IGNORECASE)
+        replacements = [
+            (r'\bDr\.', 'Doctor'), (r'\bMr\.', 'Mister'),
+            (r'\bMrs\.', 'Misses'), (r'\bMs\.', 'Miss'),
+            (r'\bProf\.', 'Professor'), (r'\bSr\.', 'Senior'),
+            (r'\bJr\.', 'Junior'), (r'\bvs\.', 'versus'),
+            (r'\be\.g\.', 'for example,'), (r'\bi\.e\.', 'that is,'),
+            (r'\betc\.', 'etcetera'), (r'\bFig\.', 'Figure'),
+        ]
+        for pattern, replacement in replacements:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
-    # Punctuation & Whitespace
-    text = re.sub(r'([!?.,:;]){3,}', r'\1\1', text)
-    text = re.sub(r'\n\n+', '... ' if add_pauses else '. ', text)
-    text = re.sub(r'\n', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
+    # 8. Clean symbols
+    text = re.sub(r'[^\w\s.,!?;:\'\"\-#%$&()]', '', text)
 
-    if remove_short_sentences:
-        sentences = re.split(r'([.!?]+\s+)', text)
-        cleaned = []
-        for i in range(0, len(sentences), 2):
-            s = sentences[i].strip()
-            d = sentences[i+1] if i+1 < len(sentences) else ''
-            if len(s.split()) >= min_sentence_words:
-                cleaned.append(s + d.strip())
-        text = ' '.join(cleaned)
+    # 9. Final cleanup
+    text = re.sub(r'[ \t]+', ' ', text)
 
-    text = re.sub(r'[^\w\s.,!?;:\'-]', '', text)
-    text = re.sub(r'\s+([.,!?;:])', r'\1', text)
-    return re.sub(r'\s+', ' ', text).strip()
+    return text.strip()
