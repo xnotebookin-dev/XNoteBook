@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Primary Meta Tags -->
     <title>XNoteBook | Text to Speech Converter - AI Voices & Natural Text to Speech</title>
     <meta name="title" content="XNoteBook | Text to Speech Converter - AI Voices & Natural Text to Speech">
     <meta name="description" content="Free online text to speech converter with AI voices. Convert text to TTS audio, upload documents for speech synthesis. Natural reader text to speech technology for high-quality voice output.">
@@ -12,23 +11,19 @@
     <meta name="author" content="XNoteBook">
     <meta name="robots" content="index, follow">
 
-    <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="Text to Speech Converter - AI Voices & Natural Text to Speech">
     <meta property="og:description" content="Free online text to speech converter with AI voices. Convert text to TTS audio instantly.">
     <meta property="og:site_name" content="XNoteBook">
 
-    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Text to Speech Converter - AI Voices & Natural Text to Speech">
     <meta name="twitter:description" content="Free online text to speech converter with AI voices. Convert text to TTS audio instantly.">
 
-    <!-- Canonical URL - REPLACE WITH YOUR ACTUAL URL -->
     <link rel="canonical" href="https://xnotebook.in/audio" />
 
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}" />
 
-    <!-- Schema.org structured data -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -205,14 +200,21 @@
         </div>
 
         <div id="box-file" class="hidden" style="flex-grow:1; display:flex; flex-direction:column;">
-    <label class="upload-box" id="dropZone">
-        <input type="file" id="fileInput" accept=".pdf,.txt,.docx" style="display:none;" />
-        <span id="uploadIcon" style="font-size: 40px; transition: 0.3s;">📂</span>
-        <strong id="uploadPrompt" style="margin-top:15px; display:block; transition: 0.3s;">Click to Upload</strong>
-        <p id="fileFileName" style="font-size: 14px; color: var(--primary-green); font-weight: 600; margin-top: 10px;"></p>
-        <p id="fileSpecs" style="font-size: 13px; color: #888;">PDF, TXT, or DOCX up to 5MB</p>
-    </label>
-</div>
+            <label class="upload-box" id="dropZone">
+                <input type="file" id="fileInput" accept=".pdf,.txt,.docx" style="display:none;" />
+                <span id="uploadIcon" style="font-size: 40px; transition: 0.3s;">📄</span>
+                <strong id="uploadPrompt" style="margin-top:15px; display:block; transition: 0.3s;">Click to Upload</strong>
+                <p id="fileFileName" style="font-size: 14px; color: var(--primary-green); font-weight: 600; margin-top: 10px;"></p>
+                <p id="fileSpecs" style="font-size: 13px; color: #888;">PDF, TXT, or DOCX up to 5MB</p>
+            </label>
+        </div>
+
+        <div style="margin-top: 20px; margin-bottom: 10px;">
+            <label for="voiceSelect" style="display: block; font-weight: 600; color: var(--text-dark); margin-bottom: 8px;">Select Voice</label>
+            <select id="voiceSelect" style="width: 100%; padding: 12px; border: 2px solid var(--border-green); border-radius: 8px; background: #fafafa; font-size: 15px; outline: none; cursor: pointer;">
+                <option value="en-US-AriaNeural" selected>Loading voices...</option>
+            </select>
+        </div>
 
         <button class="action-btn" id="generateBtn">Generate AI Audio</button>
     </div>
@@ -248,7 +250,7 @@
 <div class="footer-area">
     <div class="promo-box">
         <div class="promo-content">
-            <span style="font-size: 26px;">🔍</span>
+            <span style="font-size: 26px;">📝</span>
             <div>
                 <strong style="display:block; font-size: 17px;">Try Text Extractor</strong>
                 <span style="font-size: 13px; color: #666;">Extract text from images before generating audio.</span>
@@ -256,7 +258,7 @@
         </div>
         <a href="/" class="promo-btn">
             <span>Go to Extractor</span>
-            <span style="font-size: 18px;">➔</span>
+            <span style="font-size: 18px;">➡️</span>
         </a>
     </div>
 
@@ -270,7 +272,37 @@
 <script>
     const textInput = document.getElementById('textInput');
     const charDisplay = document.getElementById('currentChar');
+    const voiceSelect = document.getElementById('voiceSelect');
     let mode = 'text';
+
+    // Populate Voices on Load
+    window.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await fetch('/api/tts/voices');
+            const data = await res.json();
+
+            voiceSelect.innerHTML = '';
+
+            const addGroup = (label, voices) => {
+                const group = document.createElement('optgroup');
+                group.label = label;
+                voices.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.name;
+                    opt.textContent = v.description;
+                    group.appendChild(opt);
+                });
+                voiceSelect.appendChild(group);
+            };
+
+            if (data.female && data.female.length) addGroup('Female Voices', data.female);
+            if (data.male && data.male.length) addGroup('Male Voices', data.male);
+
+        } catch (e) {
+            console.error("Failed to load voices", e);
+            voiceSelect.innerHTML = '<option value="en-US-AriaNeural">Friendly US English (Default)</option>';
+        }
+    });
 
     textInput.addEventListener('input', () => {
         charDisplay.textContent = textInput.value.length;
@@ -295,6 +327,8 @@
 
         // FormData prep
         const fd = new FormData();
+        fd.append('voice', voiceSelect.value); // Add selected voice
+
         if (mode === 'text') {
             const t = textInput.value.trim();
             if (!t) return alert("Input field is empty.");
@@ -358,7 +392,7 @@
         specs.style.display = "none"; // Hide specs to focus on the filename
     } else {
         // Reset if cleared
-        icon.textContent = "📂";
+        icon.textContent = "📄";
         prompt.textContent = "Click to Upload";
         prompt.style.color = "inherit";
         nameDisplay.textContent = "";
