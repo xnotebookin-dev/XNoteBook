@@ -1222,7 +1222,7 @@ def analytics():
             })
 
         cursor.execute('''
-                    SELECT COUNT(ip_address) FROM (SELECT DISTINCT(ip_address) FROM uploads)
+                    SELECT COUNT(*) FROM tts_jobs)
                 ''')
         total_uploading_users = cursor.fetchone()[0]
 
