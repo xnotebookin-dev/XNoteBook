@@ -1222,7 +1222,7 @@ def analytics():
             })
 
         cursor.execute('''
-                    SELECT COUNT(*) FROM tts_jobs)
+                    SELECT COUNT(*) FROM tts_jobs
                 ''')
         total_uploading_users = cursor.fetchone()[0]
 
