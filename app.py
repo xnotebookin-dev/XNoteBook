@@ -1195,6 +1195,42 @@ def analytics():
             FROM uploads
         ''')
         status_stats = cursor.fetchone()
+
+        cursor.execute('''
+                    SELECT 
+                        source_filename, 
+                        voice_name, 
+                        source_file_size, 
+                        status,
+                        processed_timestamp
+                    FROM tts_jobs  
+                    WHERE source_filename IS NOT NULL
+                    ORDER BY processed_timestamp DESC
+                ''')
+
+        # We use a list of dictionaries to make it easier for the Jinja template
+        # to access keys like audio.voice_name
+        audio_results = cursor.fetchall()
+        recent_audio_processed = []
+        for row in audio_results:
+            recent_audio_processed.append({
+                'source_filename': row[0],
+                'voice_name': row[1],
+                'source_file_size': row[2],
+                'status': row[3],
+                'processed_at': row[4]
+            })
+
+        cursor.execute('''
+                    SELECT COUNT(ip_address) FROM (SELECT DISTINCT(ip_address) FROM uploads)
+                ''')
+        total_uploading_users = cursor.fetchone()[0]
+
+        cursor.execute('''
+                    SELECT COUNT(ip_address) FROM (SELECT DISTINCT(ip_address) FROM visits WHERE page = 'audio')
+                ''')
+        audio_page_visitors = cursor.fetchone()[0]
+
         conn.close()
 
         analytics_data = {
@@ -1203,6 +1239,9 @@ def analytics():
             'visits_by_country': visits_by_country,
             'uploads_by_country': uploads_by_country,
             'recent_uploads': recent_uploads,
+            'recent_audio_processed': recent_audio_processed,
+            'unique_uploaders': total_uploading_users,
+            'audio_page_users': audio_page_visitors,
             'success_rate': {
                 'completed': status_stats[0] or 0,
                 'failed': status_stats[1] or 0,
@@ -1401,7 +1440,6 @@ def download_tts_audio(job_id):
         cursor = conn.cursor()
         cursor.execute('SELECT output_file_path, source_filename, status FROM tts_jobs WHERE job_id = ?', (job_id,))
         result = cursor.fetchone()
-        conn.close()
 
         if not result:
             return jsonify({'error': 'Job not found'}), 404
@@ -1419,6 +1457,10 @@ def download_tts_audio(job_id):
         # Generate download filename
         base_name = os.path.splitext(row['source_filename'])[0] if row['source_filename'] else 'audio'
         download_name = f"{base_name}_audio.mp3"
+
+        cursor.execute(f"UPDATE tts_jobs SET status = ? WHERE job_id = ? and progress_percent = ?", ('COMPLETED', job_id, 100))
+        conn.close()
+
 
         return send_file(
             output_path,
@@ -1466,6 +1508,7 @@ def about():
 @app.route('/audio')
 def audio():
     """About the app"""
+    track_visit("audio")
     return render_template('audio.html')
 
 
