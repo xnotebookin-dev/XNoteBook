@@ -38,13 +38,6 @@ import asyncio
 
 from utils import text_extractor, audio_generator
 
-# ============================================
-# TESSERACT PATH CONFIGURATION
-# ============================================
-tesseract_bin = "/usr/bin/tesseract"
-if os.path.exists(tesseract_bin):
-    pytesseract.pytesseract.tesseract_cmd = tesseract_bin
-
 # Optional: GeoIP for location tracking
 try:
     from geoip2 import database
@@ -120,11 +113,7 @@ class JobQueue:
                     )
                 else:
                     # Original OCR processing
-                    process_document(
-                        job['input_path'],
-                        job['output_path'],
-                        job_id
-                    )
+                    pass
 
                 # Remove from active jobs
                 with self.lock:
@@ -172,39 +161,8 @@ class JobQueue:
 # Initialize global job queue
 job_queue = JobQueue(num_workers=2)
 
-# ============================================
-# TESSERACT CONFIGURATION
-# ============================================
-OPTIMIZED_DPI = 150
 
-print("="*50)
-print("🚀 TESSERACT OCR READY")
-print("="*50)
 
-try:
-    version = pytesseract.get_tesseract_version()
-    print(f"✅ Tesseract version: {version}")
-    print(f"📊 Processing DPI: {OPTIMIZED_DPI}")
-except Exception as e:
-    print(f"⚠️ Tesseract not found: {e}")
-
-print("="*50)
-
-# ============================================
-# FLORENCE-2 MODEL INITIALIZATION
-# ============================================
-device = "cuda" if torch.cuda.is_available() else "cpu"
-torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-
-model_id = "florence-community/Florence-2-base"
-
-print(f"Loading {model_id}...")
-model = Florence2ForConditionalGeneration.from_pretrained(
-    model_id,
-    torch_dtype=torch_dtype
-).to(device)
-
-processor = AutoProcessor.from_pretrained(model_id)
 
 # ============================================
 # DATABASE SETUP
@@ -485,214 +443,6 @@ def start_cleanup_scheduler(interval_hours=6, file_age_hours=24):
     print(f"✅ Cleanup scheduler started (every {interval_hours}h, deletes files older than {file_age_hours}h)")
 
 # ============================================
-# OCR PROCESSING FUNCTIONS WITH PROGRESS
-# ============================================
-
-def preprocess_image(image_path):
-    """Preprocess image for better OCR results"""
-    img = cv2.imread(image_path)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        11, 2
-    )
-    preprocessed_path = f"{image_path}_preprocessed.png"
-    cv2.imwrite(preprocessed_path, thresh)
-    return preprocessed_path
-
-
-def input_to_images(input_path, dpi=300):
-    """Convert PDF or image input to list of image paths"""
-    images = []
-    if input_path.lower().endswith(".pdf"):
-        print(f"📄 Converting PDF to images at {dpi} DPI...")
-        pages = convert_from_path(
-            input_path,
-            dpi=dpi,
-            fmt='jpeg',
-            jpegopt={'quality': 85, 'optimize': True}
-        )
-        for i, page in enumerate(pages):
-            img_path = f"{input_path}_page_{i}.jpg"
-            page.save(img_path, "JPEG", quality=85, optimize=True)
-            images.append(img_path)
-            print(f"  ✓ Page {i+1} converted")
-    else:
-        img = Image.open(input_path)
-        max_dimension = 3000
-        if max(img.size) > max_dimension:
-            print(f"📏 Resizing large image...")
-            ratio = max_dimension / max(img.size)
-            new_size = tuple(int(dim * ratio) for dim in img.size)
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-            resized_path = f"{input_path}_resized.jpg"
-            img.save(resized_path, "JPEG", quality=85, optimize=True)
-            images.append(resized_path)
-        else:
-            images.append(input_path)
-    return images
-
-
-def ocr_with_boxes(image_path):
-    """Perform OCR using Florence-2 and return text blocks with bounding boxes"""
-    image = Image.open(image_path).convert("RGB")
-    prompt = "<OCR_WITH_REGION>"
-
-    inputs = processor(text=prompt, images=image, return_tensors="pt").to(device, torch_dtype)
-
-    generated_ids = model.generate(
-        input_ids=inputs["input_ids"],
-        pixel_values=inputs["pixel_values"],
-        max_new_tokens=1024,
-        num_beams=3
-    )
-
-    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-
-    parsed_answer = processor.post_process_generation(
-        generated_text,
-        task=prompt,
-        image_size=(image.width, image.height)
-    )
-
-    blocks = []
-    quad_boxes = parsed_answer['<OCR_WITH_REGION>'].get('quad_boxes', [])
-    labels = parsed_answer['<OCR_WITH_REGION>'].get('labels', [])
-
-    for box, text in zip(quad_boxes, labels):
-        real_box = [
-            (box[0], box[1]),
-            (box[2], box[3]),
-            (box[4], box[5]),
-            (box[6], box[7])
-        ]
-        blocks.append({
-            "bbox": real_box,
-            "text": text,
-        })
-
-    return blocks
-
-
-def create_searchable_pdf(image_paths, all_blocks, output_pdf):
-    """Create a searchable PDF with invisible text layer"""
-    doc = fitz.open()
-
-    for img_path, blocks in zip(image_paths, all_blocks):
-        img = Image.open(img_path)
-        width, height = img.size
-
-        page = doc.new_page(width=float(width), height=float(height))
-        page.insert_image(page.rect, filename=img_path, keep_proportion=True)
-
-        for block in blocks:
-            text = block["text"]
-            bbox = block["bbox"]
-
-            x1 = float(bbox[0][0])
-            y1 = float(bbox[0][1])
-            x2 = float(bbox[2][0])
-            y2 = float(bbox[2][1])
-
-            font_size = max(6.0, min(40.0, y2 - y1))
-
-            if not text or font_size <= 0:
-                continue
-
-            try:
-                page.insert_text(
-                    fitz.Point(x1, y2),
-                    text,
-                    fontsize=float(font_size),
-                    fontname="helv",
-                    render_mode=3,
-                    overlay=True
-                )
-            except Exception as e:
-                print(f"  ⚠️ Skipping text block: {e}")
-
-    doc.save(output_pdf, garbage=4, deflate=True, clean=True)
-    doc.close()
-
-
-def process_document(input_path, output_pdf, job_id):
-    """Main function to process document with progress tracking"""
-    start_time = datetime.now()
-
-    try:
-        print(f"\n{'='*50}")
-        print(f"📄 Processing Job: {job_id}")
-        print(f"📁 File: {os.path.basename(input_path)}")
-        print(f"{'='*50}")
-
-        # Update status to processing
-        update_upload_status(job_id, 'processing', progress=5, step='Starting conversion')
-
-        # Convert input to images
-        image_paths = input_to_images(input_path, dpi=300)
-        print(f"📄 Converted to {len(image_paths)} page(s)")
-        update_upload_status(job_id, 'processing', progress=15, step=f'Converted to {len(image_paths)} pages')
-
-        # Perform OCR on each image with progress updates
-        all_blocks = []
-        total_pages = len(image_paths)
-
-        for i, img in enumerate(image_paths):
-            progress = 15 + int((i / total_pages) * 70)  # 15% to 85%
-            update_upload_status(
-                job_id,
-                'processing',
-                progress=progress,
-                step=f'Processing page {i+1} of {total_pages}'
-            )
-
-            print(f"🔍 OCR processing page {i+1}/{total_pages}...")
-            blocks = ocr_with_boxes(img)
-            all_blocks.append(blocks)
-            print(f"  ✓ Found {len(blocks)} text blocks")
-
-        # Create searchable PDF
-        update_upload_status(job_id, 'processing', progress=90, step='Creating searchable PDF')
-        print(f"📝 Creating searchable PDF...")
-        create_searchable_pdf(image_paths, all_blocks, output_pdf)
-
-        # Get output file size
-        output_size = os.path.getsize(output_pdf) / (1024 * 1024)
-        print(f"💾 Output PDF: {output_size:.2f} MB")
-
-        # Clean up temporary files
-        update_upload_status(job_id, 'processing', progress=95, step='Cleaning up')
-        print(f"🧹 Cleaning up temporary files...")
-        for img in image_paths:
-            if img != input_path:
-                try:
-                    os.remove(img)
-                except:
-                    pass
-
-        # Calculate processing time
-        processing_time = (datetime.now() - start_time).total_seconds()
-        print(f"✅ COMPLETED in {processing_time:.1f} seconds")
-        print(f"{'='*50}\n")
-
-        # Update status to success
-        update_upload_status(job_id, 'completed', processing_time=processing_time, progress=100, step='Complete')
-        return True
-
-    except Exception as e:
-        processing_time = (datetime.now() - start_time).total_seconds()
-        error_msg = f"{str(e)}\n{traceback.format_exc()}"
-        print(f"❌ ERROR after {processing_time:.1f}s: {e}")
-        print(traceback.format_exc())
-        print(f"{'='*50}\n")
-        update_upload_status(job_id, 'failed', error_msg, processing_time)
-        return False
-
-
-# ============================================
 # TTS JOB PROCESSOR
 # ============================================
 
@@ -886,6 +636,7 @@ def warmup():
     """Warmup endpoint"""
     try:
         version = pytesseract.get_tesseract_version()
+        OPTIMIZED_DPI = 150
         return jsonify({
             'status': 'ready',
             'ocr_engine': 'florence-2',
@@ -904,8 +655,8 @@ def warmup():
 @app.route('/')
 def index():
     """Main upload page"""
-    track_visit('index')
-    return render_template('index.html')
+    track_visit("audio")
+    return render_template('audio.html')
 
 
 @app.route('/upload', methods=['POST'])
