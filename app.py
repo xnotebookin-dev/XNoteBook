@@ -17,18 +17,9 @@ from queue import Queue
 from threading import Lock
 import traceback
 
-import torch
-from transformers import AutoProcessor, Florence2ForConditionalGeneration
 from datetime import datetime, timedelta
 import os
 
-# Import OCR processing functions
-from pdf2image import convert_from_path
-from PIL import Image
-import pytesseract
-import cv2
-import fitz
-import numpy as np
 
 # Import TTS utilities
 from utils.text_extractor import extract_text_from_file, clean_text_for_tts
@@ -612,7 +603,7 @@ def allowed_tts_file(filename):
 def health_check():
     """Health check endpoint for AWS Load Balancer"""
     try:
-        version = pytesseract.get_tesseract_version()
+        #version = pytesseract.get_tesseract_version()
         queue_info = job_queue.get_queue_info()
 
         return jsonify({
@@ -635,7 +626,7 @@ def health_check():
 def warmup():
     """Warmup endpoint"""
     try:
-        version = pytesseract.get_tesseract_version()
+        #version = pytesseract.get_tesseract_version()
         OPTIMIZED_DPI = 150
         return jsonify({
             'status': 'ready',
